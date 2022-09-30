@@ -1,29 +1,63 @@
-# README #
+py_spec (SPEC python utilities)
+======
 
-This README would normally document whatever steps are necessary to get your application up and running.
+This is the Python package for SPEC.
+`py_spec` uses the [black](https://black.readthedocs.io/en/stable/index.html) code style.
 
-### What is this repository for? ###
+Install
+======
 
-* Quick summary
-* Version
-* [Learn Markdown](https://bitbucket.org/tutorials/markdowndemo)
+You can install the package using `pip`.
 
-### How do I get set up? ###
+```
+pip install py_spec
+```
 
-* Summary of set up
-* Configuration
-* Dependencies
-* Database configuration
-* How to run tests
-* Deployment instructions
+Or from the GitHub
 
-### Contribution guidelines ###
+```
+pip install git+https://github.com/PrincetonUniversity/SPEC.git#egg=SPEC&subdirectory=Utilities/pythontools
+```
 
-* Writing tests
-* Code review
-* Other guidelines
+You can also install it locally (`cd /path/to/SPEC/Utlities/pythontools/`).
 
-### Who do I talk to? ###
+```
+python setup.py install
+```
+or
+```
+pip install -e .
+```
 
-* Repo owner or admin
-* Other community or team contact
+You can also add the path to your `PYTHONPATH` to directly use this package.
+```python
+import sys
+sys.path.append('/path/to/SPEC/Utlities/pythontools/py_spec')
+```
+
+or put this in your env file.
+```
+export PYTHONPATH=$PYTHONPATH:/path/to/SPEC/Utlities/pythontools/py_spec
+```
+
+Use
+======
+
+After installation, in your python kernel, you can use the functions by something like
+```python
+from py_spec import *
+```
+
+Documentation
+======
+You can find documentations at `./docs`.
+
+Developers
+======
+Here are the contributors:
+
+- Ksenia Aleynikova
+- Zhisong Qu
+- Jonathan Schilling
+- Christopher Berg Smiet
+- Caoxiang Zhu
