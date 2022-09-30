@@ -3,5 +3,3 @@ matplotlib
 f90nml
 numpy
 coilpy
-
-asjdn
