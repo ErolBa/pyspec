@@ -610,7 +610,7 @@ class SPECNamelist(Namelist):
             m = harmonics[0]
             n = harmonics[1]
             file_object.write(f"{m:6d} {n:6d}")
-            
+
             Rbc = self.interface_guess[(m, n)]["Rbc"]
             Zbs = self.interface_guess[(m, n)]["Zbs"]
             Rbs = self.interface_guess[(m, n)]["Rbs"]
@@ -627,8 +627,8 @@ class SPECNamelist(Namelist):
             for l in range(len(Rbc)):
                 file_object.write(output_str.format(Rbc[l], Zbs[l], Rbs[l], Zbc[l]))
 
-            file_object.write(output_str.format(0, 0, 0, 0))
-            
+            # file_object.write(output_str.format(0, 0, 0, 0))
+
             # end the line
             file_object.write("\n")
 
