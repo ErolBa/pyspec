@@ -67,23 +67,19 @@ class HMHDslab():
         areas = []
 
         # by_func = RectBivariateSpline(z, x/w*np.pi+np.pi, by, kx=3, ky=3)
-        # bx_func = RectBivariateSpline(z, x/w*np.pi+np.pi, bx, kx=3, ky=3)
-        # mu_func = RectBivariateSpline(z, x/w*np.pi+np.pi, (jx*bx+jy*by+jz*bz)/(bx**2+by**2+bz**2), kx=2, ky=2)
         by_func = interp2d(x_coord, y_coord, by, 3)
         bx_func = interp2d(x_coord, y_coord, bx, 3)
         mu_func = interp2d(x_coord, y_coord, (jx*bx+jy*by+jz*bz)/(bx**2+by**2+bz**2), 3)
+        jy_func = interp2d(x_coord, y_coord, jy, 3)
 
         if(plot_flag):
-            # xinterp = np.linspace(np.min(x_coord), np.max(x_coord), 100)
-            # yinterp = np.linspace(np.min(y_coord), np.max(y_coord), 100)
-            # xninterp, yninterp = np.meshgrid(xinterp,yinterp)
-            # plt.contourf(xinterp, zinterp, mu_func(zninterp,xninterp), levels=100, alpha=1, zorder=1)
             plt.contourf(Y, X, psi.T, levels=100, cmap='viridis', alpha=0.9)
             # plt.colorbar()
 
         mean_bx_vals = []
         mean_by_vals = []
         mean_mu_vals = []
+        mean_jy_vals = []
 
         xgrid = np.linspace(np.min(x_coord), np.max(x_coord), 1600, endpoint=True)
         ygrid = np.linspace(np.min(y_coord), np.max(y_coord), 400, endpoint=False)
@@ -144,7 +140,6 @@ class HMHDslab():
                         mean_by_vals.append(0)
                         continue
 
-                    ### get tflux, pflux
                     xm_masked = xm[mask].flatten()
                     ym_masked = ym[mask].flatten()
 
@@ -154,13 +149,14 @@ class HMHDslab():
                     by_vals = by_func(xm_masked, ym_masked) # slow
                     mean_by_vals.append(np.sum(by_vals))
 
-                    ### get area
-                    area = f.integral(np.min(y_coord), np.max(y_coord))
-                    areas.append(area)
-
-                    ### get mu
                     mu_vals = mu_func(xm_masked, ym_masked)
                     mean_mu_vals.append(np.sum(mu_vals))
+
+                    jy_vals = jy_func(xm_masked, ym_masked)
+                    mean_jy_vals.append(np.sum(jy_vals))
+
+                    area = f.integral(np.min(y_coord), np.max(y_coord))
+                    areas.append(area)
 
         rbc = np.array(rbc)
         interface_order = np.argsort(rbc[:,0])
@@ -176,6 +172,9 @@ class HMHDslab():
         adj_mean_mu = np.diff(np.array(mean_mu_vals)[interface_order])
         adj_mean_mu *= - (total_area / len(xm.flatten()))
         adj_mean_mu /= areas_vol
+
+        adj_Ivol = np.diff(np.array(mean_jy_vals)[interface_order])
+        adj_Ivol *= - (total_area / len(xm.flatten()))
 
         phiedge = adj_by_flux[-1]
 
@@ -196,60 +195,11 @@ class HMHDslab():
             plt.plot(vol_center_pos, adj_mean_mu, 'd-')
             plt.axvline(np.pi, color='r')
 
-        return rbc, adj_bx_flux, adj_by_flux, adj_mean_mu, width
+            plt.figure()
+            plt.plot(vol_center_pos, adj_Ivol, 'd-')
+            plt.axvline(np.pi, color='r')
 
-    def gen_spec_input_from_hmhd(tempalate_sp_fname, sp_fname, hmhd_fname, run_spec=True, lfz=0):
-
-        mpol = 1
-        num_conts = 15
-
-        subprocess.run(f"cp {tempalate_sp_fname} {sp_fname}", shell=True)
-        inputnml = SPECNamelist(sp_fname)
-
-        ## setup the .sp file
-        inputnml['globallist']['Lfindzero'] = lfz
-        inputnml['numericlist']['Linitialize'] = 0
-        inputnml['physicslist']['Lconstraint'] = 0
-        inputnml['physicslist']['Mpol'] = mpol
-
-        if(lfz == 3):
-            inputnml['globallist']['dxdesc'] = .5e-1
-            inputnml['globallist']['maxitdesc'] = 300000
-            inputnml['globallist']['ftoldesc'] = 1e-9
-
-        rbc, pflux, tflux, mu, w = HMHDslab.get_hmhd_profiles(hmhd_fname, num_conts, mpol, True) # extract profiles and interfaces from HMHD2D
-
-        # print('rbc',rbc)
-
-        w = 2*np.pi*0.8
-        inputnml['physicslist']['rpol'] = w / (2 * np.pi)
-        inputnml['physicslist']['rtor'] = w / (2 * np.pi)
-
-        phi_edge = tflux[-1]
-
-        nvol = len(rbc) - 1
-        print('nvol', nvol)
-        inputnml['physicslist']['Nvol'] = nvol
-        inputnml._Nvol = nvol
-        for m in range(mpol+1):
-            inputnml.interface_guess[(m,0)] = dict(Rbc=np.zeros(nvol),Rbs=np.zeros(nvol),Zbc=np.zeros(nvol),Zbs=np.zeros(nvol))
-            inputnml.interface_guess[(m,0)]["Rbc"] = np.zeros(nvol)
-            for ivol in range(nvol):
-                inputnml.interface_guess[(m,0)]["Rbc"][ivol] = rbc[ivol+1][m]
-
-        inputnml['physicslist']['phiedge'] = phi_edge
-        inputnml['physicslist']['pflux'] = -pflux[1:] / phi_edge
-        inputnml['physicslist']['tflux'] = tflux[1:] / phi_edge
-        inputnml['physicslist']['mu'] = mu
-        inputnml['physicslist']['pressure'] = np.zeros(nvol)
-
-        inputnml.write_simple(sp_fname)
-
-        if(run_spec):
-            if(lfz == 3):
-                SPECslab.run_spec_descent(sp_fname, show_output=True)
-            else:
-                SPECslab.run_spec_master(sp_fname, show_output=True)
+        return rbc, adj_bx_flux, adj_by_flux, adj_mean_mu, adj_Ivol, width
 
     def gen_profiles_from_psi(psi_string):
         x, psi0_sym, bz0_sym = sym.symbols('x, psi0, Bz0')
@@ -332,6 +282,10 @@ class HMHDslab():
     def calc_delprime_loureiro(k):
         return 2*(5-k**2)*(3+k**2)/(k**2*np.sqrt(4+k**2))
 
+    def calc_xl_for_delprimea(delprimea):
+
+
+        return xl
 
     def plot_paper_poem(delprime):
         a = 0.35
@@ -429,9 +383,12 @@ class HMHDslab():
             warnings.simplefilter("ignore")
             c = plt.contour(xm, zm, psi-psi[ind_maxrow,ind_xpt_col],levels=[0.0], colors='black')
 
+        # print((c.collections[0].get_paths())[2])
         if(len(c.collections[0].get_paths()) > 2):
-            # raise ValueError("Resonant island contour cannot have more than 2 paths!")
-            return 0, 0
+            max_len_ind = np.argmax(np.array([ len(c.collections[0].get_paths()[i]) for i in range(len(c.collections[0].get_paths())) ]))
+
+            cont1 = c.collections[0].get_paths()[max_len_ind].vertices
+            cont2 = c.collections[0].get_paths()[max_len_ind].vertices
         elif(len(c.collections[0].get_paths()) < 2):
             if(flag_plot):
                 plt.contourf(xm, zm, psi, levels=30, cmap='viridis')
@@ -439,9 +396,9 @@ class HMHDslab():
                 plt.ylabel("x")
                 plt.title(f"Contours of psi ({outfile})")
             return 0, 0
-
-        cont1 = np.array(c.collections[0].get_paths()[0].vertices)
-        cont2 = np.array(c.collections[0].get_paths()[1].vertices)
+        else:
+            cont1 = np.array(c.collections[0].get_paths()[0].vertices)
+            cont2 = np.array(c.collections[0].get_paths()[1].vertices)
 
         r_top = max(np.max(cont1[:,1]), np.max(cont2[:,1]))
         r_bottom = min(np.min(cont1[:,1]), np.min(cont2[:,1]))
@@ -467,7 +424,7 @@ class HMHDslab():
             plt.axhline(r_bottom, color='red',ls='dashed')
             plt.text(1, 2.8, f"Resonant island\nw   {island_w:.4f}  \nA_s   {island_As:.4f}", bbox=dict(facecolor='white',edgecolor='black',alpha=0.6), fontsize=16, verticalalignment='top')
 
-            print(f"Island width {island_w:.4f}  As {island_As:.4f}")
+            print(f"HMHD Island width {island_w:.4f}  As {island_As:.4f}")
 
         else:
             plt.close()
@@ -610,6 +567,14 @@ class HMHDslab():
 
         initial_config = {'psi':psi0, 'by':by0, 'jz':jz0, 'bz':bz0, 'jy':jy0}
         return initial_config
+
+    def whats_the_convention_again():
+        print("""
+            Goldston(SPEC) |  HMHD
+                  x        |   z
+                  z        |   y
+                  y        |   x
+        """)
 
 
 

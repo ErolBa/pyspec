@@ -587,28 +587,39 @@ class SPECslab():
         sarr = np.linspace(-1, 1, ns)
         tarr = np.linspace(0, 2*np.pi, nt)
 
-        z0   = np.array([0])
-        r0   = data.output.Rbc[-1,0]/2
-
         # std approach
-        At, Az, dAt, dAz = SPECslab.get_vecpot(data, lvol, sarr, tarr, z0)
-        Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, z0)
+        At, Az, dAt, dAz = SPECslab.get_vecpot(data, lvol, sarr, tarr, np.array([0]))
+        Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, np.array([0]))
 
         o_point = np.unravel_index((Az[:,:,0]).argmin(), Az[:,:,0].shape)
         x_point = np.unravel_index(((Az[:,:,0])**2).argmin(), Az[:,:,0].shape)
 
-        c = plt.contour(Tarr, Rarr, Az[:,:,0], levels=[Az[x_point][0]],colors='red',linestyles='solid')
+        plt.figure()
+        # c = plt.contour(Tarr, Rarr, Az[:,:,0], levels=[Az[x_point][0]],colors='red',linestyles='solid')
+        levels = np.linspace(Az[o_point][0], Az[x_point][0], 41)[1:-1]
+        c2 = plt.contour(Tarr, Rarr, Az[:,:,0], levels=levels, colors='black',linestyles='solid', alpha=0)
         plt.close()
 
-        cont_pts = []
-        for i in range(len(c.collections[0].get_paths())):
-            if(np.std(c.collections[0].get_paths()[i].vertices[:,1]) > 0.001):
-                cont_pts.append(c.collections[0].get_paths()[i].vertices)
+        max_closed_ind = -1
+        for i in range(len(c2.collections)):
+            if(len(c2.collections[i].get_paths()) == 1):
+                max_closed_ind = i
+
+        # if(not plot):
+        #     plt.close()
+
+        # cont_pts = []
+        # for i in range(len(c.collections[0].get_paths())):
+        #     if(np.std(c.collections[0].get_paths()[i].vertices[:,1]) > 0.001):
+        #         cont_pts.append(c.collections[0].get_paths()[i].vertices)
+
+        cont_pts = [c2.collections[max_closed_ind].get_paths()[0].vertices]
 
         if(plot):
-            fig = plt.figure()
-            plt.contourf(Tarr, Rarr, Az[:,:,0], levels=40)
+            plt.figure()
+            plt.contourf(Tarr, Rarr, Az[:,:,0], levels=30)
             plt.colorbar()
+            plt.contour(Tarr, Rarr, Az[:,:,0], levels=30, alpha=0.5, colors='black', linestyles='solid')
 
         if(len(cont_pts) < 1):
             island_w = 0.0
@@ -617,27 +628,36 @@ class SPECslab():
             island_w = np.max(cont_pts[:, 1]) - np.min(cont_pts[:, 1])
 
             if(plot):
-                for i in range(len(c.collections[0].get_paths())):
-                    if(np.std(c.collections[0].get_paths()[i].vertices[:,1]) > 0.05):
-                        plt.plot(c.collections[0].get_paths()[i].vertices[:,0], c.collections[0].get_paths()[i].vertices[:,1], 'k-.')
-                plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed')
-                plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed')
-                plt.plot(Tarr[x_point],Rarr[x_point],'rX', ms=13)
-                plt.plot(Tarr[o_point],Rarr[o_point],'bo', ms=13)
+                # for i in range(len(c.collections[0].get_paths())):
+                #     if(np.std(c.collections[0].get_paths()[i].vertices[:,1]) > 0.05):
+                #         plt.plot(c.collections[0].get_paths()[i].vertices[:,0], c.collections[0].get_paths()[i].vertices[:,1], 'k-.')
+                plt.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=2)
+
+                plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
+                plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
+                plt.plot(Tarr[x_point],Rarr[x_point],'rX', ms=9)
+                plt.plot(Tarr[o_point],Rarr[o_point],'bo', ms=9)
+
+                plt.plot(Tarr[0], Rarr[0], 'k-', lw=1)
+                plt.plot(Tarr[-1], Rarr[-1], 'k-', lw=1)
+
 
         if(plot):
             if(plot_title is None):
                 plot_title = "A_z resonant volume"
             plt.title(plot_title + f" w={island_w:.3f}")
-            fig.canvas.set_window_title(plot_title + f" w={island_w:.3f}")
+            plt.gcf().canvas.set_window_title(plot_title + f" w={island_w:.3f}")
 
-            plt.ylim([np.pi-1.,np.pi+1.])
-            # plt.ylim([0, 2*np.pi])
+            # plt.ylim([np.pi-1,np.pi+1])
+            plt.ylim([0, 2*np.pi])
+            # plt.ylim([np.min(Rarr)-0.1, np.max(Rarr)+0.1])
 
             plt.xlim([0, 2*np.pi])
             # plt.xlim([0, np.pi+0.1])
 
-        print(f"Island width is {island_w:.4f}")
+            plt.tight_layout()
+        
+        print(f"SPEC Island width {island_w:.4f}")
 
         return island_w
 
@@ -1301,8 +1321,7 @@ class SPECslab():
         # perturbation[:inpdict.Nvol//2] *= 10
         #     # perturbation *= 0
 
-        print("Finding good pertubation amplitude... ",end='')
-
+        # print("Finding good pertubation amplitude... ",end='')
         for n in range(max_num_iters):
             # print(n, end=' ')
             for i in range(inputnml._Nvol-1):
@@ -1316,7 +1335,7 @@ class SPECslab():
                 perturbation *= 0.98
             else:
                 break
-        print(n)
+        # print(n)
 
         inputnml.write_simple(ouput_fname)
         SPECslab.check_intersect_initial(inputnml, False)
