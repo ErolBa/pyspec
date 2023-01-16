@@ -282,11 +282,6 @@ class HMHDslab():
     def calc_delprime_loureiro(k):
         return 2*(5-k**2)*(3+k**2)/(k**2*np.sqrt(4+k**2))
 
-    def calc_xl_for_delprimea(delprimea):
-
-
-        return xl
-
     def plot_paper_poem(delprime):
         a = 0.35
         poem_results = 2.44 * delprime * a
@@ -311,7 +306,7 @@ class HMHDslab():
         subprocess.run(f"cd ~/HMHD2D; make", shell=True)
 
     def run_hmhd():
-        subprocess.run(f"sh runhmhd.sh Tearing", shell =True)
+        subprocess.run(f"sh ~/HMHD2D/runhmhd.sh Tearing", shell =True)
 
     def animate_imshow(i):
         data = get_array_from_hdf("run_Tearing/"+f"data{i+1:04}.hdf","psi")

@@ -203,89 +203,106 @@ class SPECslab():
         width = x_max - x_min
         return width
 
-    def get_spec_jacobian(data, lvol, sarr, theta, zeta):
+    def get_spec_jacobian(file, lvol, sarr, theta, zeta):
 
-        rtor = data.input.physics.rtor
-        rpol = data.input.physics.rpol
-        G = data.input.physics.Igeometry
-        Rarr, Zarr = SPECslab.get_spec_R_derivatives(data, lvol, sarr, theta, zeta, 'R')
+        if(isinstance(file, str)):
+            data = h5py.File(file, 'r')
+        elif(isinstance(file, h5py.File)):
+            data = file
+        else:
+            raise ValueError("Invalid input 'file' to get_spec_vecpot", file)
 
-        if(G == 1):
+        geometry =  data['input']['physics']['Igeometry'][0]
+        rpol =  data['input']['physics']['rpol'][0]
+        rtor =  data['input']['physics']['rtor'][0]
+
+        Rarr, Zarr = SPECslab.get_spec_R_derivatives(file, lvol, sarr, theta, zeta, 'R')
+
+        if(isinstance(file, str)):
+            data.close()
+
+        if(geometry == 1):
             return Rarr[1] * rtor * rpol # fixed here
-        elif(G == 2):
+        elif(geometry == 2):
             return Rarr[0] * Rarr[1]
-        elif(G == 3):
+        elif(geometry == 3):
             return Rarr[0] * (Rarr[2]*Zarr[1] - Rarr[1]*Zarr[2])
         else:
             raise ValueError("Error: unsupported dimension")
 
-    def get_spec_R_derivatives(data, vol, sarr, theta, zeta, RorZ):
+    def get_spec_R_derivatives(file, lvol, sarr, tarr, zarr, RorZ):
         # the vol index is -1 compared to the matlab one
 
-        mn = data.output.mn
-        Rmn = data.output.Rbc[vol,:]
-        Rmn_p = data.output.Rbc[vol+1,:]
-        Zmn = data.output.Zbs[vol,:]
-        Zmn_p = data.output.Zbs[vol+1,:]
-        im = data.output.im
-        iN = data.output.in_
+        if(isinstance(file, str)):
+            data = h5py.File(file, 'r')
+        elif(isinstance(file, h5py.File)):
+            data = file
+        else:
+            raise ValueError("Invalid input 'file' to get_spec_vecpot", file)
+
+        geometry =  data['input']['physics']['Igeometry'][0]
+        im = np.array(data['output']['im'][:])
+        _in = np.array(data['output']['in'][:])
+        mn = data['output']['mn'][0]
+        mregular = data['input']['numerics']['Mregular'][0]
+
+        Rbc = data['output']['Rbc'][:]
+        Rmn = Rbc[lvol,:]
+        Rmn_p = Rbc[lvol+1,:]
+        Zbs = data['output']['Zbs'][:]
+        Zmn = Zbs[lvol,:]
+        Zmn_p = Zbs[lvol+1,:]
+
+        if(isinstance(file, str)):
+            data.close()
+
         ns = len(sarr)
 
-        factor = SPECslab.get_spec_reg_factor(data, vol, sarr, 'G')
+        cosa = np.cos(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
 
-        cosa = np.cos(im*theta-iN*zeta)
-        sina = np.sin(im*theta-iN*zeta)
+        sina = np.sin(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
+        factor = SPECslab.get_spec_regularization_factor(geometry, mn, im, lvol, sarr, mregular, 'G')
 
         R = np.zeros((4, ns))
         R[0] = np.einsum('m,ms->s', cosa * (Rmn + (Rmn_p - Rmn)), factor[:,0])
         R[1] = np.einsum('m,ms->s', cosa * (Rmn_p - Rmn), factor[:,1])
         R[2] = np.einsum('m,ms->s',-sina * (Rmn + (Rmn_p - Rmn)) * im, factor[:,0])
-        R[3] = np.einsum('m,ms->s', sina * (Rmn_p - Rmn) * iN, factor[:,0])
+        R[3] = np.einsum('m,ms->s', sina * (Rmn_p - Rmn) * _in, factor[:,0])
 
         Z = np.zeros((4, ns))
         Z[0] = np.einsum('m,ms->s', sina * (Zmn + (Zmn_p - Zmn)), factor[:,0])
         Z[1] = np.einsum('m,ms->s', sina * (Zmn_p - Zmn), factor[:,1])
         Z[2] = np.einsum('m,ms->s', cosa * (Zmn + (Zmn_p - Zmn)) * im, factor[:,0])
-        Z[3] = np.einsum('m,ms->s',-cosa * (Zmn_p - Zmn) * iN, factor[:,0])
+        Z[3] = np.einsum('m,ms->s',-cosa * (Zmn_p - Zmn) * _in, factor[:,0])
 
         return R, Z
 
-    def get_spec_poly_basis(data, lvol, sarr):
+    def get_spec_poly_basis(Lsingularity, mpol, lrad, sarr):
 
         ns = len(sarr)
-        G = data.input.physics.Igeometry
-        Mpol = data.input.physics.Mpol
-        Lrad = data.input.physics.Lrad[lvol]
 
-        Lzernike = False
-        if(lvol == 0 and G != 1):
-            if(data.version < 3.0):
-                Lzernike = False
-            else:
-                Lzernike = True
-
-        T = np.ones((Lrad+1,2,ns))
+        T = np.ones((lrad+1, 2, ns))
         T[0,1] = 0
         T[1,0] = sarr
 
-        if(Lzernike):
+        if(Lsingularity):
             #NASTY STUFF
-            zernike = np.zeros((Lrad+1,Mpol+1,2,ns))
+            zernike = np.zeros((lrad+1, mpol+1, 2, ns))
             rm = np.ones(ns)
             rm1 = np.zeros(ns)
 
             sbar = (sarr+1)/2
 
-            for m in range(-1,Mpol):
-                if(Lrad >= m):
+            for m in range(-1, mpol):
+                if(lrad >= m):
                     zernike[m+1,m+1,0,:] = rm
                     zernike[m+1,m+1,1,:] = (m+1) * rm1
 
-                if(Lrad >= m+3):
+                if(lrad >= m+3):
                     zernike[m+3,m+1,0,:] = (m+3) * rm * sbar**2 - (m+2) * rm
                     zernike[m+3,m+1,1,:] = (m+3)**2 * rm * sbar - (m+2)*(m+1)*rm1
 
-                for n in range(m+4-1,Lrad,2):
+                for n in range(m+4-1,lrad,2):
                     factor1 = (n+1) / ((n+1)**2 - (m+1)**2)
                     factor2 = 4 * (n)
                     factor3 = (n-1+m+1)**2/(n-1) + (n-m)**2/(n+1)
@@ -297,30 +314,30 @@ class SPECslab():
                 rm1 = rm
                 rm *= sbar
 
-            for n in range(1,Lrad,2):
+            for n in range(1, lrad, 2):
                 zernike[n+1,0,0,:] -= (-1)**((n+1)/2)
 
-            if(Mpol >= 1):
-                for n in range(3,Lrad,2):
+            if(mpol >= 1):
+                for n in range(3, lrad, 2):
                     zernike[n+1,1,0,:] -= (-1)**((n-1)/2) * (n+1)/2 * sbar
                     zernike[n+1,1,1,:] -= (-1)**((n-1)/2) * (n+1)/2
 
-            for m in range(-1,Mpol):
-                for n in range(m,Lrad,2):
+            for m in range(-1,mpol):
+                for n in range(m, lrad, 2):
                     zernike[n+1,m+1,:,:] /= (n)
 
-            T[:,0,ns] = np.reshape(zernike[:,:,0,:],(Mpol+1,ns))
-            T[:,1,ns] = np.reshape(zernike[:,:,1,:],(Mpol+1,ns))
+            T[:,0,ns] = np.reshape(zernike[:,:,0,:],(mpol+1,ns))
+            T[:,1,ns] = np.reshape(zernike[:,:,1,:],(mpol+1,ns))
 
         else:
-            for l in range(2, Lrad+1):
+            for l in range(2, lrad+1):
                 T[l,0] = 2*sarr*T[l-1,0] - T[l-2,0]
                 T[l,1] = 2*T[l-1,0] + 2*sarr*T[l-1,1] - T[l-2,1]
 
-            for l in range(Lrad):
+            for l in range(lrad):
                 T[l+1,0] -= (-1)**(l+1)
 
-            for l in range(-1,Lrad):
+            for l in range(-1, lrad):
                 T[l+1,0] /= (l+2)
                 T[l+1,1] /= (l+2)
 
@@ -334,29 +351,24 @@ class SPECslab():
         vec_cov = np.einsum('xas,as->xs', g, vec_contrav)
         return vec_cov
 
-    def get_spec_reg_factor(data, lvol, sarr, ForG):
+    def get_spec_regularization_factor(geometry, mn, im, lvol, sarr, mregular, ForG):
 
-        G = data.input.physics.Igeometry
-        mn = data.output.mn
-        im = data.output.im
-        iN = data.output.in_
         ns = len(sarr)
 
         sbar = np.array((1+sarr)/2)
         reumn = im/2
-        Mregular  = data.input.numerics.Mregular
         fac = np.zeros((mn, 2, ns))
 
-        if(Mregular > 1):
-            ind = np.argmax(regumn>Mregular)
-            regumn[ind] = Mregular / 2
+        if(mregular > 1):
+            ind = np.argmax(regumn > mregular)
+            regumn[ind] = mregular / 2
 
         if(ForG == 'G'):
-            if(G == 1):
+            if(geometry == 1):
                 for j in range(mn):
                     fac[j,0] = sbar
                     fac[j,1] = 0.5*np.ones(ns)
-            elif(G == 2):
+            elif(geometry == 2):
                 for j in range(mn):
                     if(lvol == 0):
                         if(im[j] == 0):
@@ -368,9 +380,9 @@ class SPECslab():
                     else:
                         fac[j,0] = sbar
                         fac[j,1] = 0.5*np.ones(ns)
-            elif(G == 3):
+            elif(geometry == 3):
                 for j in range(mn):
-                    if(lvol == 1):
+                    if(lvol == 0):
                         if(im[j] == 0):
                             fac[j,0] = sbar**2
                             fac[j,1] = sbar
@@ -380,6 +392,7 @@ class SPECslab():
                     else:
                         fac[j,0] = sbar
                         fac[j,1] = 0.5*np.ones(ns)
+
         elif(ForG == 'F'):
             fac[:,0,:] = np.ones((mn, ns))
 
@@ -482,7 +495,9 @@ class SPECslab():
         # for vol in range(x_four.shape[0]):
         #     plt.plot(thetas, x[vol])
 
-    def get_vecpot(data, lvol, sarr, tarr, zarr):
+    def old_get_spec_vecpot(data, lvol, sarr, tarr, zarr):
+
+        # get vector potential from .h5 spec outpout that uses old/regular chebyshev basis (not recombined)
 
         vecpot = data.vector_potential
         im = data.output.im
@@ -515,8 +530,8 @@ class SPECslab():
         term_t =  Ate[:,:,None,None]*np.cos(a[None,...]) + Ato[:,:,None,None]*np.sin(a[None,...])
         term_z = Aze[:,:,None,None]*np.cos(a[None,...]) + Azo[:,:,None,None]*np.sin(a[None,...])
 
-        At_dAt = np.einsum('sa,lia,ljtz->istz', fac[:,0], T, term_t)
-        Az_dAz = np.einsum('sa,lia,ljtz->istz', fac[:,0], T, term_z)
+        At_dAt = np.einsum('sa,lia,ljtz->istz', fac[:,0], T, term_t, optimize=True)
+        Az_dAz = np.einsum('sa,lia,ljtz->istz', fac[:,0], T, term_z, optimize=True)
 
         Az = np.zeros((ns,nt,nz))
         for j in range(mn):
@@ -574,7 +589,12 @@ class SPECslab():
 
         return Rarr, Tarr, dRarr
 
-    def get_islandwidth(fname, ns, nt, plot=False, plot_title=None):
+    def get_islandwidth(fname, ns=200, nt=200, plot=False, plot_title=None):
+
+        if(fname[-3:] == '.sp'):
+            fname = fname+".h5"
+        elif(fname[-4:] == '.end'):
+            fname = fname[:-4]+".h5"
 
         if(not os.path.isfile(fname)):
             print(f"File '{fname}' does not exist (get_islandwidth())")
@@ -588,7 +608,7 @@ class SPECslab():
         tarr = np.linspace(0, 2*np.pi, nt)
 
         # std approach
-        At, Az, dAt, dAz = SPECslab.get_vecpot(data, lvol, sarr, tarr, np.array([0]))
+        At, Az = SPECslab.get_spec_vecpot(fname, lvol, sarr, tarr, np.array([0]))
         Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, np.array([0]))
 
         o_point = np.unravel_index((Az[:,:,0]).argmin(), Az[:,:,0].shape)
@@ -605,21 +625,13 @@ class SPECslab():
             if(len(c2.collections[i].get_paths()) == 1):
                 max_closed_ind = i
 
-        # if(not plot):
-        #     plt.close()
-
-        # cont_pts = []
-        # for i in range(len(c.collections[0].get_paths())):
-        #     if(np.std(c.collections[0].get_paths()[i].vertices[:,1]) > 0.001):
-        #         cont_pts.append(c.collections[0].get_paths()[i].vertices)
-
         cont_pts = [c2.collections[max_closed_ind].get_paths()[0].vertices]
 
         if(plot):
             plt.figure()
-            plt.contourf(Tarr, Rarr, Az[:,:,0], levels=30)
+            plt.contourf(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.9)
             plt.colorbar()
-            plt.contour(Tarr, Rarr, Az[:,:,0], levels=30, alpha=0.5, colors='black', linestyles='solid')
+            plt.contour(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.5, colors='black', linestyles='solid')
 
         if(len(cont_pts) < 1):
             island_w = 0.0
@@ -628,15 +640,12 @@ class SPECslab():
             island_w = np.max(cont_pts[:, 1]) - np.min(cont_pts[:, 1])
 
             if(plot):
-                # for i in range(len(c.collections[0].get_paths())):
-                #     if(np.std(c.collections[0].get_paths()[i].vertices[:,1]) > 0.05):
-                #         plt.plot(c.collections[0].get_paths()[i].vertices[:,0], c.collections[0].get_paths()[i].vertices[:,1], 'k-.')
                 plt.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=2)
 
                 plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
                 plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
-                plt.plot(Tarr[x_point],Rarr[x_point],'rX', ms=9)
-                plt.plot(Tarr[o_point],Rarr[o_point],'bo', ms=9)
+                # plt.plot(Tarr[x_point],Rarr[x_point],'rX', ms=9)
+                plt.plot(Tarr[o_point],Rarr[o_point],'ro', ms=9)
 
                 plt.plot(Tarr[0], Rarr[0], 'k-', lw=1)
                 plt.plot(Tarr[-1], Rarr[-1], 'k-', lw=1)
@@ -644,8 +653,8 @@ class SPECslab():
 
         if(plot):
             if(plot_title is None):
-                plot_title = "A_z resonant volume"
-            plt.title(plot_title + f" w={island_w:.3f}")
+                plot_title = f"A_z resonant volume (island width {island_w:.4f})"
+            plt.title(plot_title)
             plt.gcf().canvas.set_window_title(plot_title + f" w={island_w:.3f}")
 
             # plt.ylim([np.pi-1,np.pi+1])
@@ -656,8 +665,89 @@ class SPECslab():
             # plt.xlim([0, np.pi+0.1])
 
             plt.tight_layout()
-        
-        print(f"SPEC Island width {island_w:.4f}")
+
+        print(f"SPEC Island width {island_w:.8f}")
+
+        return island_w
+
+    def old_get_islandwidth(fname, ns=200, nt=200, plot=False, plot_title=None):
+
+        if(fname[-3:] == '.sp'):
+            fname = fname+".h5"
+        elif(fname[-4:] == '.end'):
+            fname = fname[:-4]+".h5"
+
+        if(not os.path.isfile(fname)):
+            print(f"File '{fname}' does not exist (get_islandwidth())")
+            return
+
+        data = SPECout(fname)
+
+        fdata = data.vector_potential
+        lvol =  data.input.physics.Nvol // 2
+        sarr = np.linspace(-1, 1, ns)
+        tarr = np.linspace(0, 2*np.pi, nt)
+
+        # std approach
+        At, Az, dAt, dAz = SPECslab.old_get_spec_vecpot(data, lvol, sarr, tarr, np.array([0]))
+        Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, np.array([0]))
+
+        o_point = np.unravel_index((Az[:,:,0]).argmin(), Az[:,:,0].shape)
+        x_point = np.unravel_index(((Az[:,:,0])**2).argmin(), Az[:,:,0].shape)
+
+        plt.figure()
+        # c = plt.contour(Tarr, Rarr, Az[:,:,0], levels=[Az[x_point][0]],colors='red',linestyles='solid')
+        levels = np.linspace(Az[o_point][0], Az[x_point][0], 41)[1:-1]
+        c2 = plt.contour(Tarr, Rarr, Az[:,:,0], levels=levels, colors='black',linestyles='solid', alpha=0)
+        plt.close()
+
+        max_closed_ind = -1
+        for i in range(len(c2.collections)):
+            if(len(c2.collections[i].get_paths()) == 1):
+                max_closed_ind = i
+
+        cont_pts = [c2.collections[max_closed_ind].get_paths()[0].vertices]
+
+        if(plot):
+            plt.figure()
+            plt.contourf(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.9)
+            plt.colorbar()
+            plt.contour(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.5, colors='black', linestyles='solid')
+
+        if(len(cont_pts) < 1):
+            island_w = 0.0
+        else:
+            cont_pts = np.concatenate(cont_pts)
+            island_w = np.max(cont_pts[:, 1]) - np.min(cont_pts[:, 1])
+
+            if(plot):
+                plt.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=2)
+
+                plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
+                plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
+                # plt.plot(Tarr[x_point],Rarr[x_point],'rX', ms=9)
+                plt.plot(Tarr[o_point],Rarr[o_point],'ro', ms=9)
+
+                plt.plot(Tarr[0], Rarr[0], 'k-', lw=1)
+                plt.plot(Tarr[-1], Rarr[-1], 'k-', lw=1)
+
+
+        if(plot):
+            if(plot_title is None):
+                plot_title = f"A_z resonant volume (island width {island_w:.4f})"
+            plt.title(plot_title)
+            plt.gcf().canvas.set_window_title(plot_title + f" w={island_w:.3f}")
+
+            # plt.ylim([np.pi-1,np.pi+1])
+            plt.ylim([0, 2*np.pi])
+            # plt.ylim([np.min(Rarr)-0.1, np.max(Rarr)+0.1])
+
+            plt.xlim([0, 2*np.pi])
+            # plt.xlim([0, np.pi+0.1])
+
+            plt.tight_layout()
+
+        print(f"SPEC Island width {island_w:.8f}")
 
         return island_w
 
@@ -683,7 +773,7 @@ class SPECslab():
 
         for lvol in lvol_list:
             Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, z0)
-            At, Az, dAt, dAz = SPECslab.get_vecpot(data, lvol, sarr, tarr, z0)
+            At, Az = SPECslab.get_spec_vecpot(fname, lvol, sarr, tarr, z0)
             ax.contourf(Tarr,Rarr,Az[:,:,0], levels=40)
 
         return ax
@@ -741,80 +831,175 @@ class SPECslab():
                 B[comp, ind] = f(r_int)
         return B
 
-    def get_spec_magfield(data, lvol, sarr, theta, zeta):
+    def get_spec_vecpot(file, lvol, sarr=None, tarr=None, zarr=None):
 
-        jac = SPECslab.get_spec_jacobian(data, lvol, sarr, theta, zeta)
+        # get vector potential from .h5 spec outpout that uses recombined chebyshev basis (not regular)
 
-        vecpot = data.vector_potential
-        im = data.output.im
-        iN = data.output.in_
-        mn = data.output.mn
+        if(isinstance(file, str)):
+            data = h5py.File(file, 'r')
+        elif(isinstance(file, h5py.File)):
+            data = file
+        else:
+            raise ValueError("Invalid input 'file' to get_spec_vecpot", file)
+
+        lrad = data['input']['physics']['Lrad'][lvol]
+        nvol = data['input']['physics']['Nvol'][0]
+        geometry =  data['input']['physics']['Igeometry'][0]
+        mpol =  data['input']['physics']['Mpol'][0]
+
+        im = np.array(data['output']['im'][:])
+        _in = np.array(data['output']['in'][:])
+        mn = data['output']['mn'][0]
+        mregular = data['input']['numerics']['Mregular'][0]
+
+        lim1 = lvol * (lrad+1)
+        lim2 = (lvol+1) * (lrad+1)
+        Ate = data['vector_potential']['Ate'][:, lim1:lim2]
+        Aze = data['vector_potential']['Aze'][:, lim1:lim2]
+        Ato = data['vector_potential']['Ato'][:, lim1:lim2]
+        Azo = data['vector_potential']['Azo'][:, lim1:lim2]
+
+        if(isinstance(file, str)):
+            data.close()
+
+        sarr = np.linspace(-1, 1, 10) if sarr is None else sarr
+        zarr = np.array([0]) if zarr is None else zarr
+        tarr = np.linspace(0, 2*np.pi, 100) if tarr is None else tarr
+
         ns = len(sarr)
-        G = data.input.physics.Igeometry
+        nz = len(zarr)
+        nt = len(tarr)
 
-        Lrad = data.input.physics.Lrad[lvol]
-        Ate = np.array(vecpot.Ate[lvol]).T
-        Aze = np.array(vecpot.Aze[lvol]).T
-        Ato = np.array(vecpot.Ato[lvol]).T
-        Azo = np.array(vecpot.Azo[lvol]).T
+        Lsingularity = (lvol == 0) and (geometry != 1)
 
-        Bs = np.zeros((ns))
-        Bt = np.zeros((ns))
-        Bz = np.zeros((ns))
+        T = SPECslab.get_spec_poly_basis(Lsingularity, mpol, lrad, sarr)
 
-        T = SPECslab.get_spec_poly_basis(data, lvol, sarr)
+        factors = SPECslab.get_spec_regularization_factor(geometry, mn, im, lvol, sarr, mregular, 'F')
 
-        Lsingularity = False
-        if(lvol == 0 and G != 1):
-            Lsingularity = True
+        cosa = np.cos(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
+        sina = np.sin(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
 
-        for l in range(Lrad+1):
+        if(Lsingularity):
+            At = np.zeros((ns, nt, nz))
+            Az = np.zeros((ns, nt, nz))
+
             for j in range(mn):
-                if(Lsingularity):
-                    basis = np.swapaxes(T[l,0,im[j]+1,:],0,1)
-                    dbasis = np.swapaxes(T[l,1,im[j]+1,:],0,1)
-                else:
-                    basis = T[l,0]
-                    dbasis = T[l,1]
+                basis = T[:,0,im[j]+1]
 
-                cosa = np.cos(im[j]*theta - iN[j]*zeta)
-                sina = np.sin(im[j]*theta - iN[j]*zeta)
-                Bs[:] += basis * ((im[j]*Azo[l,j] + iN[j]*Ato[l,j]) * cosa - (im[j]*Aze[l,j] + iN[j]*Ate[l,j]) * sina)
-                Bt[:] -= dbasis * (Aze[l,j]*cosa + Azo[l,j]*sina)
-                Bz[:] += dbasis * (Ate[l,j]*cosa + Ato[l,j]*sina) # fixed it here
+                At += np.einsum('js,s,jltz->stz', factors[:,0,:], basis, Ate[:,:,None,None]*cosa[:,None,:,:]+ Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
+                Az += np.einsum('js,s,jltz->stz', factors[:,0,:], basis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
+        else:
+            basis = T[:,0,:]
+
+            At = np.einsum('js,ls,jltz->stz', factors[:,0,:], basis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
+            Az = np.einsum('js,ls,jltz->stz', factors[:,0,:], basis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
+
+        return At, Az
+
+
+    def get_spec_magfield(file, lvol, sarr, tarr, zarr):
+
+        tarr = np.array(tarr)
+        zarr = np.array(zarr)
+
+        if(isinstance(file, str)):
+            data = h5py.File(file, 'r')
+        elif(isinstance(file, h5py.File)):
+            data = file
+        else:
+            raise ValueError("Invalid input 'file' to get_spec_vecpot", file)
+
+        jac = SPECslab.get_spec_jacobian(file, lvol, sarr, tarr, zarr)
+
+        lrad = data['input']['physics']['Lrad'][lvol]
+        nvol = data['input']['physics']['Nvol'][0]
+        geometry =  data['input']['physics']['Igeometry'][0]
+        mpol =  data['input']['physics']['Mpol'][0]
+        im = np.array(data['output']['im'][:])
+        _in = np.array(data['output']['in'][:])
+        mn = data['output']['mn'][0]
+        mregular = data['input']['numerics']['Mregular'][0]
+
+        lim1 = lvol * (lrad+1)
+        lim2 = (lvol+1) * (lrad+1)
+        Ate = data['vector_potential']['Ate'][:, lim1:lim2]
+        Aze = data['vector_potential']['Aze'][:, lim1:lim2]
+        Ato = data['vector_potential']['Ato'][:, lim1:lim2]
+        Azo = data['vector_potential']['Azo'][:, lim1:lim2]
+
+        if(isinstance(file, str)):
+            data.close()
+
+        ns = len(sarr)
+
+        Lsingularity = (lvol == 0) and (geometry != 1)
+
+        T = SPECslab.get_spec_poly_basis(Lsingularity, mpol, lrad, sarr)
+
+        cosa = np.cos(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
+        sina = np.sin(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
+
+        if(Lsingularity):
+            Bs = np.zeros((ns, nt, nz))
+            Bt = np.zeros((ns, nt, nz))
+            Bz = np.zeros((ns, nt, nz))
+
+            for j in range(mn):
+                basis = T[:,0,im[j]+1]
+                dbasis = T[:,1,im[j]+1]
+
+                Bs_term = (im[:,None]*Azo[:,:] + _in[:,None]*Ato[:,:])[:,:,None,None] * cosa[:,None,:,:] - (im[:,None]*Aze[:,:] + _in[:,None]*Ate[:,:])[:,:,None,None] * sina[:,None,:,:]
+                Bs += np.einsum('s,jltz->stz', basis, Bs_term, optimize=True)
+                Bt += np.einsum('s,jltz->stz', -dbasis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
+                Bz += np.einsum('s,jltz->stz', dbasis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
+        else:
+            basis = T[:,0,:]
+            dbasis = T[:,1,:]
+            #print('T', T.shape)
+            Bs_term = (im[:,None]*Azo[:,:] + _in[:,None]*Ato[:,:])[:,:,None,None] * cosa[:,None,:,:] - (im[:,None]*Aze[:,:] + _in[:,None]*Ate[:,:])[:,:,None,None] * sina[:,None,:,:]
+            #print(basis.shape, Bs_term.shape)
+            Bs = np.einsum('ls,jltz->stz', basis, Bs_term, optimize=True)
+            Bt = np.einsum('ls,jltz->stz', -dbasis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
+            Bz = np.einsum('ls,jltz->stz', dbasis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
+
+        # for l in range(Lrad+1):
+        #     for j in range(mn):
+        #         if(Lsingularity):
+        #             basis = np.swapaxes(T[l,0,im[j]+1,:],0,1)
+        #             dbasis = np.swapaxes(T[l,1,im[j]+1,:],0,1)
+        #         else:
+        #             basis = T[l,0]
+        #             dbasis = T[l,1]
+        #
+        #         cosa = np.cos(im[j]*theta - iN[j]*zeta)
+        #         sina = np.sin(im[j]*theta - iN[j]*zeta)
+        #         Bs[:] += basis * ((im[j]*Azo[l,j] + iN[j]*Ato[l,j]) * cosa - (im[j]*Aze[l,j] + iN[j]*Ate[l,j]) * sina)
+        #         Bt[:] -= dbasis * (Aze[l,j]*cosa + Azo[l,j]*sina)
+        #         Bz[:] += dbasis * (Ate[l,j]*cosa + Ato[l,j]*sina) # fixed it here
 
         Bcontrav = np.array([Bs, Bt, Bz]) / jac
+
+        print(Bs)
+
         return Bcontrav
 
-    def run_spec_master(fname, show_output=False):
+    def run_spec_master(fname, num_cpus=8, show_output=False, log_file=None):
 
-        print(f"\n{('-'*80)}\nRunning SPEC with {fname}")
-
-        # # if running from jupyer, redirect output appropriately
-        # from IPython import get_ipython
-        # if(get_ipython() is not None):
-        #     print("Using jupyer nb")
-        #
-        #     with subprocess.Popen(f'mpirun -n 6 ~/SPEC/xspec {fname}', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=1, universal_newlines=True) as p:
-        #         for line in p.stdout:
-        #             print(line, end='') # process line here
-        #
-        #     if p.returncode != 0:
-        #         raise CalledProcessError(p.returncode, p.args)
-        #
-        #     return True
+        print(f"\n{('-'*80)}\nRunning SPEC newton with {fname}")
 
         try:
             if(show_output):
-                subprocess.run(f'mpirun -n 6 ~/SPEC/xspec {fname}', shell=True)
+                if(log_file is None):
+                    subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True)
+                else:
+                    with open(log_file, "a") as f:
+                        subprocess.run(f'mpirun -n {num_cpus} ~/spec_descent/SPEC/xspec {fname}', shell=True, stdout=f, stderr=f)
             else:
-                subprocess.run(f'mpirun -n 6 ~/SPEC/xspec {fname}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
             data = SPECout(fname+".h5")
-            print(f"\nSPEC completed")
-            print(f"force error {data.output.ForceErr:.4e}")
-            # print("ForceErr iterations",SPECslab.print_indentd(np.array([data.iterations[i][2] for i in range(len(data.iterations))])))
-            print("\n")
+            print(f"\nSPEC completed  ---  |f| = {data.output.ForceErr:.5e}\n")
 
             return True
 
@@ -822,21 +1007,24 @@ class SPECslab():
             print("Running SPEC failed!!!")
             return False
 
-    def run_spec_descent(fname, show_output=False):
 
-        print(f"\n{('-'*80)}\nRunning SPEC with {fname}")
+    def run_spec_descent(fname, num_cpus=8, show_output=False, log_file=None):
+
+        print(f"\n{('-'*80)}\nRunning SPEC descent with {fname}")
 
         try:
             if(show_output):
-                subprocess.run(f'mpirun -n 6 ~/spec_descent/SPEC/xspec {fname}', shell=True)
+                if(log_file is None):
+                    subprocess.run(f'mpirun -n {num_cpus} ~/spec_descent/SPEC/xspec {fname}', shell=True)
+                else:
+                    with open(log_file, "a") as f:
+                        subprocess.run(f'mpirun -n {num_cpus} ~/spec_descent/SPEC/xspec {fname}', shell=True, stdout=f, stderr=f)
             else:
-                subprocess.run(f'mpirun -n 6 ~/spec_descent/SPEC/xspec {fname}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                subprocess.run(f'mpirun -n {num_cpus} ~/spec_descent/SPEC/xspec {fname}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
             data = SPECout(fname+".h5")
-            print(f"\nSPEC completed")
-            print(f"force error {data.output.ForceErr:.4e}")
-            # print("ForceErr iterations",SPECslab.print_indentd(np.array([data.iterations[i][2] for i in range(len(data.iterations))])))
-            print("\n")
+            print(f"\nSPEC completed  ---  |f| = {data.output.ForceErr:.5e}\n")
 
             return True
 
@@ -1114,6 +1302,10 @@ class SPECslab():
         for t in range(0, inpdict.Nvol):
             mu_vol[t] = integrate.quad(mu_func, infaces_x[t], infaces_x[t+1])[0] / (infaces_x[t+1] - infaces_x[t])
 
+        # plt.figure()
+        # plt.plot(x_array, mu_func(x_array),'.-')
+        # print("mu_vol\n",mu_vol)
+
         iota_vol = SPECslab.iota_slab(infaces_x, inpdict.by0, inpdict.bz0, inpdict.rslab, inpdict.rslab)
 
         curr_array = SPECslab.torflux(x_array, inpdict.jz0) * (2 * np.pi * inpdict.rslab)
@@ -1298,7 +1490,10 @@ class SPECslab():
 
         print(f"Del\' * a {SPECslab.calc_delprime(1/inpdict.rslab)*a:.3f} rslab {inpdict.rslab:.3f} psi_w {inpdict.psi_w:.3f}\n")
 
-        SPECslab.get_spec_energy(inpdict.fname_outh5)
+        try:
+            SPECslab.get_spec_energy(inpdict.fname_outh5)
+        except AttributeError:
+            pass
         # SPECslab.plot_kamsurf(inpdict.fname_outh5, f"init kam surfaces psi_w={inpdict.psi_w:.3f}")
 
     def add_perturbation(input_fname, ouput_fname, kick_amplitude=0.8, max_num_iters=200):
@@ -1332,7 +1527,7 @@ class SPECslab():
                 if(n == max_num_iters-1):
                     print("\nERROR: Couldn't find pertubation amplitude!")
                     return False
-                perturbation *= 0.98
+                perturbation *= 0.96
             else:
                 break
         # print(n)
@@ -1341,6 +1536,38 @@ class SPECslab():
         SPECslab.check_intersect_initial(inputnml, False)
 
         return True
+
+    def print_tree_h5(fname):
+        with h5py.File(fname,'r') as hf:
+            hf.visititems(print_attrs)
+
+    def comapre_hdf5_files(fname1, fname2):
+
+        with h5py.File(fname1) as f:
+            f1_flat = {}
+            f.visititems(lambda a, b: flatten_hdf5_file(a, b, f1_flat))
+
+        with h5py.File(fname2) as f:
+            f2_flat = {}
+            f.visititems(lambda a, b: flatten_hdf5_file(a, b, f2_flat))
+
+        for key in f1_flat.keys():
+
+            if('iterations' in key):
+                continue
+
+            if(key not in f2_flat.keys()):
+                raise KeyError("Two hdf5 files have different keys")
+
+            min_len = min(len(f1_flat[key]), len(f2_flat[key]))
+            same = np.allclose(f1_flat[key][:min_len], f2_flat[key][:min_len])
+
+            if(not same):
+                print(f"\n --> Value of {key} is different")
+                range = max(len(f1_flat[key]), 15)
+                with np.printoptions(threshold=200, edgeitems=10):
+                    print(f1_flat[key][:range])
+                    print(f2_flat[key][:range])
 
 
 class input_dict(dict):
@@ -1369,6 +1596,33 @@ def check_intersect_helper(x, nvol):
                 if((diff[i]*diff[i+1]) < 0):
                     return True
     return False
+
+
+def print_attrs(name, obj):
+    shift = (name.count('/')) * '\t'
+    item_name = name.split("/")[-1]
+
+    if(isinstance(obj, h5py.Group)):
+        print(shift, '--'*10)
+        print(shift, 'GROUP ', item_name)
+    try:
+        for key, val in obj.items():
+            if(val.shape != (1,)):
+                print(shift + '\t' + f"{key}: {val.shape} \t\n{val[:]}")
+            else:
+                print(shift + '\t' + f"{key}: {val[0]}")
+            # print_val = val[0] if val.shape == (1,) else val.shape
+            # print(shift + '\t' + f"{key}: {print_val}")
+    except:
+        pass
+
+def flatten_hdf5_file(name, node, file_dict):
+    fullname = node.name
+
+    if isinstance(node, h5py.Dataset):
+        file_dict[fullname] = node[:]
+    else:
+        pass
 
 if __name__ == "__main__":
 
