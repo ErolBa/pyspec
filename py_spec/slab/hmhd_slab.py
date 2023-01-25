@@ -24,8 +24,6 @@ class HMHDslab():
 
     def get_hmhd_profiles(hmhd_fname, num_conts, mpol, plot_flag):
 
-        plt.rcParams['figure.figsize'] = [13, 8]
-
         numba.set_num_threads(4)
 
         if(plot_flag):
@@ -34,24 +32,31 @@ class HMHDslab():
             ax.set_xlabel("y")
             ax.set_ylabel("x")
 
-        h5file = h5py.File(hmhd_fname)
-        psi = h5file['psi'][2:-2, 2:-1]
-        bz = h5file['bz'][2:-2, 2:-1]
-        by = h5file['by'][2:-2, 2:-1]
-        bx = h5file['bx'][2:-2, 2:-1]
-        jz = h5file['jz'][2:-2, 2:-1]
-        jy = h5file['jy'][2:-2, 2:-1]
-        jx = h5file['jx'][2:-2, 2:-1]
-        x = h5file["x"][2:-1]
-        z = h5file["z"][2:-2]
+        with h5py.File(hmhd_fname) as h5file:
+            psi = h5file['psi'][2:-2, 2:-1]
+            bz = h5file['bz'][2:-2, 2:-1]
+            by = h5file['by'][2:-2, 2:-1]
+            bx = h5file['bx'][2:-2, 2:-1]
+            jz = h5file['jz'][2:-2, 2:-1]
+            jy = h5file['jy'][2:-2, 2:-1]
+            jx = h5file['jx'][2:-2, 2:-1]
+            x = h5file["x"][2:-1]
+            z = h5file["z"][2:-2]
+
+        # roll the fields
+        ind = np.arange(psi.shape[1])
+        ind = np.roll(ind, len(ind)//2)
+        ind[:len(ind)//2] -= 1
+        for f in [psi, by, bx, bz, jx, jy, jz]:
+            f[:,:] = f[:, ind]
 
         y_coord = x.copy() # transform to spec coords
         x_coord = z.copy() # transform to spec coords
 
-        # c_levels = np.linspace(np.min(psi), np.max(psi), num_conts, endpoint=True)
-
         X, Y = np.meshgrid(x_coord[::1], y_coord[::1])
-        c = plt.contour(Y, X, psi.T, levels=num_conts, colors='black')
+        c_levels = np.linspace(np.min(psi), np.max(psi), num_conts, endpoint=True)[1:-1]
+        c = plt.contour(Y, X, psi.T, levels=c_levels, colors='black') #psi
+
         plt.ylim([np.min(x_coord)-0.1, np.max(x_coord)+0.1])
         plt.xlim([np.min(y_coord)-0.1, np.max(y_coord)+0.1])
         if(not plot_flag):
@@ -87,7 +92,8 @@ class HMHDslab():
 
         ynew = np.linspace(np.min(y_coord)+1e-10, np.max(y_coord), 40, endpoint=True)
 
-        plt.figure()
+        if(plot_flag):
+            plt.figure()
 
         for cont in range(num_conts): # iterate over each level
         # for cont in [2,7,12]: # iterate over each level
@@ -105,15 +111,15 @@ class HMHDslab():
                 x = path_array[:,1]
                 y = path_array[:,0]
 
-                if(len(level)==1):
-                    plt.plot(y,x,'r-')
-                else:
-                    plt.plot(y,x,'b--')
+                # if(len(level)==1):
+                #     plt.plot(y,x,'r-')
+                # else:
+                #     plt.plot(y,x,'b--')
+                if(plot_flag):
+                    plt.ylim([-np.pi*1.05, np.pi*1.05])
 
                 # check if the path is flat (or belongs to an island
                 if(np.abs(path_array[-1,0]-path_array[0,0]) < 1e-4):
-                    # if(plot_flag):
-                    #     ax1.plot(y, x, '-', color=color)
                     pass
                 else:
                     if(y[-1] < y[0]):
@@ -126,13 +132,13 @@ class HMHDslab():
                     rbc.append(np.array([ft.real[m] if m==0 else 2 * ft.real[m] for m in range(mpol+1)])/len(ft))
                     rbc[-1][0] += np.pi
 
-                    # # check reconstructed interfaces are correct (and that ft was done well)
-                    # if(plot_flag):
-                    #     xrecons = np.zeros_like(ynew)
-                    #     xrecons += ft.real[0] / (len(ft))
-                    #     for m in range(1, mpol+1):
-                    #         xrecons += 2 * ft.real[m]*np.cos(m*(np.pi + np.pi * ynew / width)) / (len(ft))
-                    #     ax1.plot(ynew, xrecons , '-.', color=color, zorder=5)
+                    # check reconstructed interfaces are correct (and that ft was done well)
+                    if(plot_flag):
+                        xrecons = np.zeros_like(ynew)
+                        xrecons += ft.real[0] / (len(ft))
+                        for m in range(1, mpol+1):
+                            xrecons += 2 * ft.real[m]*np.cos(m*(np.pi + np.pi * ynew / width)) / (len(ft))
+                        plt.plot(ynew, xrecons , '-.', color=color, zorder=5)
 
                     mask = f(ym) > xm
                     if(np.sum(mask) < 1):
@@ -181,8 +187,6 @@ class HMHDslab():
         rbc = rbc[interface_order]
 
         if(plot_flag):
-            plt.rcParams['figure.figsize'] = [12, 4]
-
             plt.figure()
             plt.plot(rbc[:,0], adj_by_flux/phiedge, 'd-')
             plt.axvline(np.pi, color='r')
@@ -200,6 +204,7 @@ class HMHDslab():
             plt.axvline(np.pi, color='r')
 
         return rbc, adj_bx_flux, adj_by_flux, adj_mean_mu, adj_Ivol, width
+
 
     def gen_profiles_from_psi(psi_string):
         x, psi0_sym, bz0_sym = sym.symbols('x, psi0, Bz0')
@@ -267,7 +272,7 @@ class HMHDslab():
             else:
                 args = [psi_mag]
 
-            plt.figure()
+            plt.figure(f)
             plt.title(f)
             plt.plot(x_array, initial_config[f](x_array, *args))
             plt.plot(x_array, config[f](x_array, *args), 'r--')
@@ -319,10 +324,10 @@ class HMHDslab():
 
         global cont, contf
 
-        h5file = h5py.File("run_Tearing/"+f"data{i+1:04}.hdf",'r')
-        data = h5file['psi'][:]
-        x = h5file["x"][:]
-        z = h5file["z"][:]
+        with h5py.File("run_Tearing/"+f"data{i+1:04}.hdf",'r') as h5file:
+            data = h5file['psi'][:]
+            x = h5file["x"][:]
+            z = h5file["z"][:]
 
         for c in contf.collections:
             c.remove()
@@ -360,10 +365,10 @@ class HMHDslab():
             # plt.rcParams['figure.figsize'] = [8, 9]
             plt.figure()
 
-        h5 = h5py.File(outfile,'r')
-        psi = h5["psi"][:]
-        x = h5["x"][:]
-        z = h5["z"][:]
+        with h5py.File(outfile,'r') as h5:
+            psi = h5["psi"][:]
+            x = h5["x"][:]
+            z = h5["z"][:]
 
         mask = np.ones_like(psi)
         mask[:,:psi.shape[1]//2] = 0
@@ -399,7 +404,8 @@ class HMHDslab():
         r_bottom = min(np.min(cont1[:,1]), np.min(cont2[:,1]))
 
         if(np.abs(cont1[0,0]-cont1[-1,0]) < 1e-2):
-            r_x = (cont1[np.argmax(cont1[:,0]),1] + cont2[np.argmin(cont2[:,0]),1]) * 0.5
+            # r_x = (cont1[np.argmax(cont1[:,0]),1] + cont2[np.argmin(cont2[:,0]),1]) * 0.5
+            r_x = (np.max(cont1[:,1]) + np.min(cont2[:,1])) * 0.5
         elif(np.abs(cont1[0,1]-cont1[-1,1]) < 1e-2):
             r_x = (np.max(cont1[:,1]) + np.min(cont2[:,1])) * 0.5
         else:
@@ -419,12 +425,102 @@ class HMHDslab():
             plt.axhline(r_bottom, color='red',ls='dashed')
             plt.text(1, 2.8, f"Resonant island\nw   {island_w:.4f}  \nA_s   {island_As:.4f}", bbox=dict(facecolor='white',edgecolor='black',alpha=0.6), fontsize=16, verticalalignment='top')
 
-            print(f"HMHD Island width {island_w:.4f}  As {island_As:.4f}")
+            # print(f"HMHD Island width {island_w:.4f}  As {island_As:.4f}")
 
         else:
             plt.close()
 
         return island_w, island_As
+
+    def get_width_As_HMHD_new(outfile, plot=True, plot_title=None, xlims=[-2, 2], ylims=[-np.pi, np.pi]):
+
+        with h5py.File(outfile, 'r') as h5:
+            psi = h5['psi'][2:-2, 2:-1]
+            psi *= -1.0
+            x = h5["x"][2:-1]
+            z = h5["z"][2:-2]
+
+        ind = np.arange(psi.shape[1])
+        ind = np.roll(ind, len(ind)//2)
+        ind[:len(ind)//2] -= 1
+        psi[:,:] = psi[:, ind]
+
+        x_interp = np.linspace(np.min(x), np.max(x), 600, endpoint=True)
+        z_interp = np.linspace(np.min(z), np.max(z), 600, endpoint=True)
+        psi_interp_spline = RectBivariateSpline(z, x, psi)
+        psi_interp_val = psi_interp_spline(z_interp, x_interp, grid=True)
+
+        # plt.figure()
+        # plt.contourf(xm_interp, zm_interp, psi_interp_val, levels=60)
+        # plt.contour(xm_interp, zm_interp, psi_interp_val, levels=30, colors='black', linestyles='solid')
+        # plt.figure()
+        # plt.contourf(xm, zm, psi, levels=60)
+        # plt.contour(xm, zm, psi, levels=30, colors='black', linestyles='solid')
+
+        psi_main = psi_interp_val
+        xm_main, zm_main = np.meshgrid(x_interp, z_interp)
+
+        o_point = np.unravel_index((psi_main[:,:]).argmin(), psi_main[:,:].shape)
+        x_point = np.unravel_index(((psi_main[:,:])**2).argmin(), psi_main[:,:].shape)
+
+        plt.ioff()
+        plt.figure()
+        levels = np.linspace(psi_main[o_point], psi_main[x_point], 600)[1:-1]
+        c2 = plt.contour(xm_main, zm_main, psi_main[:,:], levels=levels, colors='black', linestyles='solid', alpha=0)
+        plt.close()
+        # plt.ion()
+
+        max_closed_ind = -1
+        for i in range(len(c2.collections)):
+            verts = c2.collections[i].get_paths()[0].vertices
+            if(len(c2.collections[i].get_paths()) == 1 and np.linalg.norm(verts[-1]-verts[0]) < 1e-5):
+                max_closed_ind = i
+        cont_pts = [c2.collections[max_closed_ind].get_paths()[0].vertices]
+
+        if(plot):
+            plt.figure()
+            plt.contourf(xm_main, zm_main, psi_main[:,:], levels=20, alpha=0.9)
+            plt.colorbar()
+            plt.contour(xm_main, zm_main, psi_main[:,:], levels=20, alpha=0.5, colors='black', linestyles='solid')
+
+        if(len(cont_pts) < 1):
+            island_w = 0.0
+        else:
+            cont_pts = np.concatenate(cont_pts)
+            island_w = np.max(cont_pts[:, 1]) - np.min(cont_pts[:, 1])
+
+            r_up = np.max(cont_pts[:, 1])
+            r_down = np.min(cont_pts[:, 1])
+
+            # r_x = zm[x_point]
+            r_x = cont_pts[np.argmin(cont_pts[:,0]), 1]
+            Asym = (r_up-r_x)/(r_x-r_down) - 1
+
+            print(f"r_up,down,x -- {r_up} {r_down} {r_x}")
+
+            if(plot):
+                plt.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=2)
+                plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
+                plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
+                plt.axhline(r_x, color='k', linestyle='dashed', lw=1.5)
+                plt.plot(cont_pts[np.argmin(cont_pts[:,0]), 0],cont_pts[np.argmin(cont_pts[:,0]), 1],'rX', ms=9)
+                plt.plot(xm_main[o_point],zm_main[o_point],'ro', ms=9)
+                plt.plot(xm_main[0], zm_main[0], 'k-', lw=1)
+                plt.plot(xm_main[-1], zm_main[-1], 'k-', lw=1)
+
+        if(plot):
+            if(plot_title is None):
+                plot_title = f"A_z resonant volume (width {island_w:.4f} Asym {Asym:.4f})"
+            plt.title(plot_title)
+            plt.gcf().canvas.set_window_title(plot_title + f" w={island_w:.3f}")
+            plt.ylim(ylims)
+            plt.xlim(xlims)
+            plt.tight_layout()
+
+        print(f"HMHD Island width {island_w:.8f}")
+
+        return island_w, Asym
+
 
     def get_width_run(root_fname="run_Tearing"):
         fnames_h5files = sorted(glob.glob(root_fname+"/data*.hdf"))
@@ -534,10 +630,20 @@ class HMHDslab():
         by_fun = lambda x: sym_config['by'](x, psi0_mag)
         d2by_fun = lambda x: sym_config['d2by'](x, psi0_mag)
 
-        sol_left, sol_right = HMHDslab.find_psi_perturbed(k, psi0_fun, by_fun, d2by_fun, 54, 0)
+        sol_left, sol_right = HMHDslab.find_psi_perturbed(k, psi0_fun, by_fun, d2by_fun, 128, 0)
 
         delprime = (sol_right.y[1,0] - sol_left.y[1,-1]) / sol_right.y[0,0]
         sigprime = (sol_right.y[1,0] + sol_left.y[1,-1]) / sol_right.y[0,0]
+
+        plt.figure()
+        plt.plot(sol_left.x,sol_left.y[0], label="$\psi\'$ left")
+        plt.plot(sol_right.x,sol_right.y[0], label="$\psi\'$ right")
+        plt.legend()
+
+        plt.figure()
+        plt.plot(sol_left.x,sol_left.y[1], label="$d\psi\'/dx$ left")
+        plt.plot(sol_right.x,sol_right.y[1], label="$d\psi\'/dx$ right")
+        plt.legend()
 
         return delprime, sigprime
 
