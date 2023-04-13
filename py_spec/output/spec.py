@@ -40,6 +40,7 @@ class SPECout:
         test_derivatives
     )
     from ._plot_modB import plot_modB
+    from ._plot_modB import plot_fmn
     from ._plot_iota import plot_iota
 
     def __init__(self, *args, **kwargs):

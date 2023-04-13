@@ -3,7 +3,7 @@
 
 import numpy as np
 import matplotlib
-matplotlib.use("Qt5Agg")
+# matplotlib.use("Qt5Agg")
 import matplotlib.pyplot as plt
 import h5py
 from py_spec import SPECNamelist, SPECout
@@ -13,8 +13,10 @@ import sys
 import numpy.linalg as linalg
 import numba
 import os
+import contextlib
 import warnings
 import sympy as sym
+from scipy.optimize import minimize_scalar
 
 class SPECslab():
     """
@@ -82,6 +84,29 @@ class SPECslab():
 
     def gen_ifaces_funcspaced(x, ind_Lresinface, ind_Rresinface, func, Nvol):
         values = func(x)
+
+        Linfaces_val = np.linspace(values[0], values[ind_Lresinface], (Nvol+1)//2, endpoint=True)
+        Rinfaces_val = np.linspace(values[-1], values[ind_Rresinface], (Nvol+1)//2, endpoint=True)[::-1]
+        Linfaces_ind = np.argmin(np.abs(values[:len(x)//2,None]-Linfaces_val[None,:]), axis=0)
+        Rinfaces_ind = np.argmin(np.abs(values[len(x)//2:,None]-Rinfaces_val[None,:]), axis=0) + (len(x)//2)
+        infaces_ind = SPECslab.join_arrays(Linfaces_ind, Rinfaces_ind)
+        infaces_val = SPECslab.join_arrays(Linfaces_val, Rinfaces_val)
+        infaces_x = x[infaces_ind]
+        return infaces_ind, infaces_x, infaces_val
+
+    def gen_ifaces_funcspaced_new(x, ind_Lresinface, ind_Rresinface, func_deriv, Nvol):
+        deriv = func_deriv(x)
+        a = 1.0
+        dx = a / deriv
+
+        integ = [integrate.quad(func_deriv, -np.pi, a)[0] for a in x]
+
+        plt.figure()
+        plt.plot(x, deriv)
+        plt.show()
+
+
+        values = func_deriv(x)
         Linfaces_val = np.linspace(values[0], values[ind_Lresinface], (Nvol+1)/2, endpoint=True)
         Rinfaces_val = np.linspace(values[-1], values[ind_Rresinface], (Nvol+1)/2, endpoint=True)[::-1]
         Linfaces_ind = np.argmin(np.abs(values[:len(x)//2,None]-Linfaces_val[None,:]), axis=0)
@@ -99,7 +124,6 @@ class SPECslab():
             raise ValueError("Psi at x=0 has to be 0 !!!\n")
 
     def get_hessian(fname):
-
         if(fname[-3:] == '.sp'):
             fname = fname+".DF"
         elif(fname[-3:] == '.h5'):
@@ -123,21 +147,19 @@ class SPECslab():
             ngdof = read_int(fid)
             read_int(fid)
             read_int(fid)
-
-            mode_number = int((nvol-1) * (mpol + 1))
-            H = np.fromfile(fid, 'float64').reshape((mode_number, mode_number)).T
+            #mode_number = int((nvol-1) * (mpol + 1))
+            H = np.fromfile(fid, 'float64').reshape((int(ngdof), int(ngdof))).T
 
         return H
 
     def get_hessian_new(fname):
-
         # reads the hessian from .hessian file, apparently made prior to fourier transforms
         if(fname[-3:] == '.sp'):
             fname = fname[:-3] + ".hessian"
         elif(fname[-3:] == '.h5'):
-            fname = fname[:-5]+".hessian"
-        elif(fname[-4:] == '.end'):
             fname = fname[:-6]+".hessian"
+        elif(fname[-4:] == '.end'):
+            fname = fname[:-7]+".hessian"
         else:
             raise ValueError("Invalid file given to get_hessian()")
 
@@ -158,8 +180,10 @@ class SPECslab():
     def get_eigenstuff(fname, which='new'):
         """
         ARGS:
+			fname:
+				name of SPEC file
             which:
-                "old" gets hessian from .###.sp.DF (not that good, has asymmetry) (default)
+                "old" gets hessian from .###.sp.DF (not that good, has asymmetry)
                 "new" gets hessian from .###.hessian (default)
         """
 
@@ -182,6 +206,7 @@ class SPECslab():
         minvec = v[:, indmin]
 
         return w, v, indmin, minvec
+
 
     def perturb_eq(fname_hdf5, psi_w):
         # takes an .end file (with the modes at the end)
@@ -510,7 +535,7 @@ class SPECslab():
         ax.set_ylim([0-0.2,2*np.pi+0.2])
         ax.set_xlim([0-0.1,2*np.pi+0.1])
 
-        fig.canvas.set_window_title(title)
+        plt.gcf().canvas.manager.set_window_title(title)
         plt.title(title)
         fig.set_size_inches(7,9)
         fig.tight_layout()
@@ -619,7 +644,7 @@ class SPECslab():
 
         return Rarr, Tarr, dRarr
 
-    def get_islandwidth(fname, ns=600, nt=600, plot=False, plot_title=None, xlims=[0, 2*np.pi], ylims=[0, 2*np.pi]):
+    def get_islandwidth(fname, ns=500, nt=500, plot=False, plot_title=None, xlims=[0, 2*np.pi], ylims=[0, 2*np.pi]):
 
         if(fname[-3:] == '.sp'):
             fname = fname+".h5"
@@ -633,7 +658,115 @@ class SPECslab():
         data = SPECout(fname)
 
         fdata = data.vector_potential
-        lvol =  data.input.physics.Nvol // 2
+        lvol =  data.input.physics.Nvol // 2 #-11
+        sarr = np.linspace(-1, 1, ns)
+        tarr = np.linspace(0, 2*np.pi, nt)
+
+        if(plot):
+            plt.figure()
+
+        # plot vecpot in other volumes as well
+#        if(plot):
+#            for v in np.arange(2, lvol, 1):
+#                At, Az = SPECslab.get_spec_vecpot(fname, v, sarr, tarr, np.array([0]))
+#                Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, v, sarr, tarr, np.array([0]))
+#                plt.contour(Tarr, Rarr, Az[:,:,0], levels=1, alpha=0.9, lw=1.3, colors='black', linestyles='solid')
+#
+#            for v in np.arange(lvol+1, data.input.physics.Nvol-2, 1):
+#                At, Az = SPECslab.get_spec_vecpot(fname, v, sarr, tarr, np.array([0]))
+#                Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, v, sarr, tarr, np.array([0]))
+#                plt.contour(Tarr, Rarr, Az[:,:,0], levels=[np.mean(Az)], alpha=0.9, lw=1.3, colors='black', linestyles='solid')
+#
+        At, Az = SPECslab.get_spec_vecpot(fname, lvol, sarr, tarr, np.array([0]))
+        Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, np.array([0]))
+
+        o_point = np.unravel_index((Az[:,:,0]).argmin(), Az[:,:,0].shape)
+        x_point = np.unravel_index(((Az[:,:,0])**2).argmin(), Az[:,:,0].shape)
+
+        plt.ioff()
+        plt.figure()
+        levels = np.linspace(Az[o_point][0], Az[x_point][0], 700)[1:-1]
+        c2 = plt.contour(Tarr, Rarr, Az[:,:,0], levels=levels, colors='black',linestyles='solid', alpha=0)
+        plt.close()
+        # plt.ion()
+
+        max_closed_ind = -1
+        for i in range(len(c2.collections)):
+            verts = c2.collections[i].get_paths()[0].vertices
+            if(len(c2.collections[i].get_paths()) == 1 and np.linalg.norm(verts[-1]-verts[0]) < 1e-5):
+                max_closed_ind = i
+        cont_pts = [c2.collections[max_closed_ind].get_paths()[0].vertices]
+
+        if(plot):
+            # plt.contourf(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.9)
+            # plt.colorbar()
+            plt.contour(Tarr, Rarr, Az[:,:,0], levels=20, alpha=1., colors='black', linestyles='solid')
+    
+            # plot the res. volume bondary
+            theta_bnd = np.linspace(0, 2*np.pi, 200)
+            rarr_bnd, tarr_bnd, _ = SPECslab.get_rtarr(data, lvol, [-1,1], theta_bnd, np.array([0]))
+            for i in [0, 1]:
+                plt.plot(theta_bnd, rarr_bnd[i], color='royalblue', lw=3, zorder=20)
+
+        if(len(cont_pts) < 1):
+            island_w = 0.0
+        else:
+            cont_pts = np.concatenate(cont_pts)
+            island_w = np.max(cont_pts[:, 1]) - np.min(cont_pts[:, 1])
+
+            r_up = np.max(cont_pts[:, 1])
+            r_down = np.min(cont_pts[:, 1])
+
+            # r_x = Rarr[x_point]
+            r_x = cont_pts[np.argmin(cont_pts[:,0]), 1]
+            Asym = (r_up-r_x)/(r_x-r_down) - 1
+
+            # print(f"r_up,down,x -- {r_up-np.pi} {r_down-np.pi} {r_x-np.pi}")
+
+            if(plot):
+                plt.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=3.5)
+
+                plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=2.3)
+                plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=2.3)
+                plt.axhline(r_x, color='r', linestyle='dashed', lw=2.3)
+                plt.plot(cont_pts[np.argmin(cont_pts[:,0]), 0], cont_pts[np.argmin(cont_pts[:,0]), 1],'rX', ms=11)
+                plt.plot(Tarr[o_point],Rarr[o_point],'ro', ms=10)
+                plt.plot(Tarr[0], Rarr[0], 'k-', lw=1)
+                plt.plot(Tarr[-1], Rarr[-1], 'k-', lw=1)
+
+        if(plot):
+            if(plot_title is None):
+                plot_title = f"SPEC island (width {island_w:.3f} Asym {Asym:.3f})"
+                # plot_title = f"SPEC island (width {island_w:.4f})"
+            plt.title(plot_title, fontsize=22)
+            # plt.gcf().ca
+            plt.gcf().canvas.manager.set_window_title(plot_title + f" w={island_w:.3f}")
+            plt.ylim(ylims)
+            plt.xlim(xlims)
+            plt.xlabel("$\\theta$", fontsize=18)
+            plt.ylabel("R", fontsize=18)
+            plt.tight_layout()
+
+
+        print(f"SPEC Island width {island_w:.8f}")
+
+        return island_w, Asym
+
+    def get_islandwidth_returnrpmx(fname, ns=500, nt=500, plot=False, plot_title=None, xlims=[0, 2*np.pi], ylims=[0, 2*np.pi]):
+
+        if(fname[-3:] == '.sp'):
+            fname = fname+".h5"
+        elif(fname[-4:] == '.end'):
+            fname = fname[:-4]+".h5"
+
+        if(not os.path.isfile(fname)):
+            print(f"File '{fname}' does not exist (get_islandwidth())")
+            return
+
+        data = SPECout(fname)
+
+        fdata = data.vector_potential
+        lvol =  data.input.physics.Nvol // 2 #-11
         sarr = np.linspace(-1, 1, ns)
         tarr = np.linspace(0, 2*np.pi, nt)
 
@@ -645,7 +778,7 @@ class SPECslab():
 
         plt.ioff()
         plt.figure()
-        levels = np.linspace(Az[o_point][0], Az[x_point][0], 600)[1:-1]
+        levels = np.linspace(Az[o_point][0], Az[x_point][0], 700)[1:-1]
         c2 = plt.contour(Tarr, Rarr, Az[:,:,0], levels=levels, colors='black',linestyles='solid', alpha=0)
         plt.close()
         # plt.ion()
@@ -660,7 +793,7 @@ class SPECslab():
         if(plot):
             plt.figure()
             plt.contourf(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.9)
-            plt.colorbar()
+            # plt.colorbar()
             plt.contour(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.5, colors='black', linestyles='solid')
 
         if(len(cont_pts) < 1):
@@ -676,7 +809,7 @@ class SPECslab():
             r_x = cont_pts[np.argmin(cont_pts[:,0]), 1]
             Asym = (r_up-r_x)/(r_x-r_down) - 1
 
-            print(f"r_up,down,x -- {r_up-np.pi} {r_down-np.pi} {r_x-np.pi}")
+            # print(f"r_up,down,x -- {r_up-np.pi} {r_down-np.pi} {r_x-np.pi}")
 
             if(plot):
                 plt.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=2)
@@ -684,24 +817,23 @@ class SPECslab():
                 plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
                 plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
                 plt.axhline(r_x, color='k', linestyle='dashed', lw=1.5)
-                plt.plot(Tarr[x_point],Rarr[x_point],'rX', ms=9)
+                plt.plot(cont_pts[np.argmin(cont_pts[:,0]), 0], cont_pts[np.argmin(cont_pts[:,0]), 1],'rX', ms=9)
                 plt.plot(Tarr[o_point],Rarr[o_point],'ro', ms=9)
-
                 plt.plot(Tarr[0], Rarr[0], 'k-', lw=1)
                 plt.plot(Tarr[-1], Rarr[-1], 'k-', lw=1)
 
         if(plot):
             if(plot_title is None):
-                plot_title = f"A_z resonant volume (width {island_w:.4f} Asym {Asym:.4f})"
+                plot_title = f"SPEC A_z resonant volume (width {island_w:.4f} Asym {Asym:.4f})"
             plt.title(plot_title)
-            plt.gcf().canvas.set_window_title(plot_title + f" w={island_w:.3f}")
+            plt.gcf().canvas.manager.set_window_title(plot_title + f" w={island_w:.3f}")
             plt.ylim(ylims)
             plt.xlim(xlims)
             plt.tight_layout()
 
         print(f"SPEC Island width {island_w:.8f}")
 
-        return island_w, Asym
+        return island_w, Asym, r_up, r_down, r_x
 
 
     def old_get_islandwidth(fname, ns=200, nt=200, plot=False, plot_title=None):
@@ -770,7 +902,7 @@ class SPECslab():
             if(plot_title is None):
                 plot_title = f"A_z resonant volume (island width {island_w:.4f})"
             plt.title(plot_title)
-            plt.gcf().canvas.set_window_title(plot_title + f" w={island_w:.3f}")
+            plt.gcf().canvas.manager.set_window_title(plot_title + f" w={island_w:.3f}")
 
             # plt.ylim([np.pi-1,np.pi+1])
             plt.ylim([0, 2*np.pi])
@@ -803,7 +935,7 @@ class SPECslab():
 
         fig, ax = plt.subplots(1, 1)
         plt.title(title)
-        fig.canvas.set_window_title('A_z')
+        plt.gcf().canvas.manager.set_window_title('A_z')
 
         for lvol in lvol_list:
             Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, z0)
@@ -1016,9 +1148,10 @@ class SPECslab():
 
         return Bcontrav
 
-    def run_spec_master(fname, num_cpus=8, show_output=False, log_file=None):
+    def run_spec_master(fname, num_cpus=8, show_output=False, print_force=True, log_file=None):
 
-        print(f"\n{('-'*80)}\nRunning SPEC newton with {fname}")
+        if(print_force):
+            print(f"\n{('-'*80)}\nRunning SPEC newton with {fname}")
 
         try:
             if(show_output):
@@ -1026,13 +1159,13 @@ class SPECslab():
                     subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True)
                 else:
                     with open(log_file, "a") as f:
-                        subprocess.run(f'mpirun -n {num_cpus} ~/spec_descent/SPEC/xspec {fname}', shell=True, stdout=f, stderr=f)
+                        subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True, stdout=f, stderr=f)
             else:
                 subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-
-            data = SPECout(fname+".h5")
-            print(f"SPEC completed  ---  |f| = {data.output.ForceErr:.5e}")
+            if(print_force):
+                data = SPECout(fname+".h5")
+                print(f"SPEC completed  ---  |f| = {data.output.ForceErr:.5e}")
 
             return True
 
@@ -1097,7 +1230,7 @@ class SPECslab():
 
         fig, ax = plt.subplots(1, 1)
         plt.title('Plot of magnetic field B')
-        fig.canvas.set_window_title('Field B')
+        plt.gcf().canvas.manager.set_window_title('Field B')
 
         data = SPECout(fname)
 
@@ -1127,7 +1260,7 @@ class SPECslab():
 
         fig, ax = plt.subplots(1, 1)
         plt.title('Plot of current J')
-        fig.canvas.set_window_title('Current J')
+        plt.gcf().canvas.manager.set_window_title('Current J')
 
         data = SPECout(fname)
 
@@ -1172,7 +1305,7 @@ class SPECslab():
         """
         fig, ax = plt.subplots(1, 1)
         plt.title('Plot of $\mu$')
-        fig.canvas.set_window_title('Mu')
+        plt.gcf().canvas.manager.set_window_title('Mu')
 
         data = SPECout(fname)
 
@@ -1197,7 +1330,7 @@ class SPECslab():
         """
         fig, ax = plt.subplots(1, 1)
         plt.title('Plot of poloidal and toroidal fluxes')
-        fig.canvas.set_window_title('Flux')
+        fig.canvas.manager.set_window_title('Flux')
 
         psi_flag = bz_flag = True
         if(func_psi0 is None):
@@ -1238,7 +1371,7 @@ class SPECslab():
         """
         fig, ax = plt.subplots(1, 1)
         plt.title('Plot of iota')
-        fig.canvas.set_window_title('Iota')
+        plt.gcf().canvas.manager.set_window_title('Iota')
 
         data = SPECout(fname)
 
@@ -1312,6 +1445,13 @@ class SPECslab():
         x_array = np.linspace(-np.pi, np.pi, x_resolution)
 
         ind_Lresinface, ind_Rresinface = SPECslab.infacesres_ind(x_array, inpdict.psi_w, inpdict.bz0)
+
+        # fluxt_norm = SPECslab.norm_torflux(x_array, inpdict.bz0)
+        # ind_Lresinface = np.argmin(np.abs(fluxt_norm - 0.5 * (1 - inpdict.psi_w)))
+        # ind_Rresinface = np.argmin(np.abs(fluxt_norm - 0.5 * (1 + inpdict.psi_w)))
+        #
+        # infaces_ind, infaces_x, infaces_psi = SPECslab.gen_ifaces_funcspaced_new(x_array, ind_Lresinface, ind_Rresinface, inpdict.by0, inpdict.Nvol)
+
         if(inpdict.infaces_spacing == 'uniform'):
             infaces_ind, infaces_x, infaces_psi = SPECslab.gen_ifaces_funcspaced(x_array, ind_Lresinface, ind_Rresinface, lambda x: x, inpdict.Nvol) #uniform spacing
         elif(inpdict.infaces_spacing == 'psi'):
@@ -1343,7 +1483,6 @@ class SPECslab():
 
         curr_array = SPECslab.torflux(x_array, inpdict.jz0) * (2 * np.pi * inpdict.rslab)
         curr_vol = curr_array[infaces_ind]
-
 
         # vecpot_y = SPECslab.join_arrays([0.0], integrate.cumtrapz(inpdict.bz0(x_array), x_array))
         # vecpot_z = SPECslab.join_arrays([0.0], -integrate.cumtrapz(inpdict.by0(x_array), x_array))
@@ -1450,15 +1589,23 @@ class SPECslab():
         else:
             psi0_func = inpdict.psi0
 
-        # ind_Lresinface, ind_Rresinface = SPECslab.infacesres_ind(x_array, inpdict.psi_w, inpdict.bz0)
         ind_Lresinface = np.argmin(np.abs(x_array - inpdict.r_down))
         ind_Rresinface = np.argmin(np.abs(x_array - inpdict.r_up))
+
         if(inpdict.infaces_spacing == 'uniform'):
             infaces_ind, infaces_x, infaces_psi = SPECslab.gen_ifaces_funcspaced(x_array, ind_Lresinface, ind_Rresinface, lambda x: x, inpdict.Nvol) #uniform spacing
         elif(inpdict.infaces_spacing == 'psi'):
             infaces_ind, infaces_x, infaces_psi = SPECslab.gen_ifaces_funcspaced(x_array, ind_Lresinface, ind_Rresinface, psi0_func, inpdict.Nvol)
         else:
             raise ValueError("infaces_spacing has to be either uniform or psi")
+
+        # # debugging stuff
+        # plt.figure()
+        # plt.plot(x_array, psi0_func(x_array),'d-')
+        # plt.title("Psi_func")
+        # for i in infaces_x:
+        #     plt.axvline(i, color='red')
+        # plt.show()
 
         # phi_edge = 2 * np.pi * inpdict.rslab * integrate.trapz(inpdict.bz0(x_array), x_array)
         # tflux = SPECslab.norm_torflux(x_array, inpdict.bz0)[infaces_ind]
@@ -1550,7 +1697,7 @@ class SPECslab():
             inputnml['physicslist']['helicity'] = helicity
 
         elif(inputnml['physicslist']['Lconstraint'] == 3):
-            SPECslab.check_psi(x_array, psi0_func)
+            # SPECslab.check_psi(x_array, psi0_func)
             inputnml['physicslist']['isurf'] = np.zeros(inpdict.Nvol)
             inputnml['physicslist']['ivolume'] = curr_vol[1:]#*1.03
             inputnml['physicslist']['tflux'] = tflux[1:]
@@ -1685,12 +1832,7 @@ class SPECslab():
         perturbation *= np.sign(perturbation[1*len(perturbation)//4])
         perturbation *= kick_amplitude
 
-        # perturbation[-1] = 0
-        # perturbation[inpdict.Nvol//2:] *= 10
-        # perturbation[:inpdict.Nvol//2] *= 10
-        #     # perturbation *= 0
-
-        # print("Finding good pertubation amplitude... ",end='')
+        print("Finding good pertubation amplitude... ",end='')
 
         for n in range(max_num_iters):
             # print(n, end=' ')
@@ -1744,7 +1886,7 @@ class SPECslab():
                     print(f1_flat[key][:range])
                     print(f2_flat[key][:range])
 
-    def calc_asym_inface_pos(r_s, psi_w, delp, sigp, psi_string, psi_func, tflux_func):
+    def calc_asym_inface_pos(psi_w, r_s, delp, sigp, psi_string, psi_func, tflux_func):
 
         r_s_norm = (r_s + np.pi) / (2*np.pi)
 
@@ -1791,6 +1933,104 @@ class SPECslab():
 
         boldA = d2by_sym.evalf(6, subs={x: r_s}) / dby_sym.evalf(6, subs={x: r_s})
         return boldA
+
+
+    def gen_profiles_from_psi(psi_string):
+        x, psi0_sym, bz0_sym = sym.symbols('x, psi0, Bz0')
+
+        psi_sym = sym.sympify(psi_string)
+        by_sym = sym.diff(psi_sym, x)
+        jz_sym = sym.diff(by_sym, x)
+        bz_sym = sym.sqrt(bz0_sym**2 - by_sym**2)
+        jy_sym = sym.diff(bz_sym, x)
+
+        psi_sym = sym.Add(psi_sym, -psi_sym.evalf(6, subs={x: -np.pi}))
+
+        output_dict = {}
+        output_dict["psi"] = sym.lambdify([x,psi0_sym], psi_sym)
+        output_dict["by"] = sym.lambdify([x,psi0_sym], by_sym)
+        output_dict["jz"] = sym.lambdify([x,psi0_sym], jz_sym)
+        output_dict["bz"] = sym.lambdify([x,psi0_sym, bz0_sym], bz_sym)
+        output_dict["jy"] = sym.lambdify([x,psi0_sym, bz0_sym], -1 * jy_sym)
+
+        output_dict["psi_sym"] = psi_sym
+        output_dict["by_sym"] = by_sym
+        output_dict["jz_sym"] = jz_sym
+        output_dict["bz_sym"] = bz_sym
+        output_dict["jy_sym"] = -1 * jy_sym
+
+        return output_dict
+
+    def run_slab_profile(inpdict, config, show_output=False):
+
+        inpdict.fname_outh5 = inpdict.fname_input+'.h5'
+
+        inpdict.psi0 = lambda x: config["psi"](x, inpdict.psi0_mag)
+        inpdict.by0 = lambda x: config["by"](x, inpdict.psi0_mag)
+        inpdict.bz0 = lambda x: config["bz"](x, inpdict.psi0_mag, inpdict.bz0_mag)
+        inpdict.jy0 = lambda x: config["jy"](x, inpdict.psi0_mag, inpdict.bz0_mag)
+        inpdict.jz0 = lambda x: config["jz"](x, inpdict.psi0_mag)
+
+        SPECslab.run_spec_slab(inpdict, show_output)
+
+    def find_max_psiw_symm(delprimeas, psiw_lims, constraint=2):
+        # finds max psiw for each delprimea
+
+        if(isinstance(delprimeas, float)):
+            delprimeas = [delprimeas]
+            psiw_lims = [psiw_lims]
+
+        inpdict = input_dict()
+        inpdict.psi0_mag = 3 * np.sqrt(3) / 4
+        inpdict.bz0_mag = 10.0
+        inpdict.linitialize = 0
+        inpdict.lbeltrami = 4
+        inpdict.lfindzero = 2
+        # inpdict.infaces_spacing = 'psi'
+        inpdict.infaces_spacing = 'uniform'
+        inpdict.pre = np.zeros(inpdict.Nvol)
+        inpdict.lconstraint = constraint
+        inpdict.fname_template = 'template.sp'
+        inpdict.fname_input = 'stability_analysis.sp'
+        inpdict.Nvol = 21
+        inpdict.Mpol = 1 # min eigval independent of mpol (so use smallest mpol=1)
+
+        profile = f'psi0 * (1 / cosh(x)**2 - 1/cosh(-pi)**2)' ## PROFILES
+        inpdict.config = SPECslab.gen_profiles_from_psi(profile)
+        inpdict.lamba_val = 1e10
+
+        def psiw_func(psiw, delprimea, inpdict):
+
+            inpdict.psi_w = psiw
+            inpdict.rslab = SPECslab.calc_rslab_for_delprime(delprimea/0.35)
+
+            with open(os.devnull, 'w') as devnull:
+                with contextlib.redirect_stdout(devnull):
+                    SPECslab.run_slab_profile(inpdict, inpdict.config, False)
+
+            eigval, eigvec, min_eigval_ind, min_eigvec = SPECslab.get_eigenstuff(inpdict.fname_input)
+            min_eigval = eigval[min_eigval_ind]
+            inpdict.lamba_val = min_eigval
+
+            print(f"psiw {psiw:.4f} min_eigval {min_eigval:.5e}")
+            # return -psiw if min_eigval < 0 else 1.0
+            return -psiw if min_eigval < 0 else psiw
+
+        best_psiws = []
+        for d in range(len(delprimeas)):
+
+            if(psiw_func(psiw_lims[d][0], delprimeas[d], inpdict) > 0):
+                raise ValueError("Error in psiw search. Need left bound for psiw to have lambda<0!")
+
+            res = minimize_scalar(lambda x: psiw_func(x, delprimeas[d], inpdict),
+                                  bounds=(psiw_lims[d][0], psiw_lims[d][1]), method='bounded',
+                                  options={'xatol': 1e-5, 'maxiter': 30, 'disp': 0}) ## dafulat xatol: 1e-6
+            best_psiws.append(res.x)
+
+            print(f"Final lambda {inpdict.lamba_val} psiw {best_psiws[-1]} delprimea {delprimeas[d]}")
+
+        return np.array(best_psiws) if len(best_psiws) > 1 else best_psiws[0]
+
 
 class input_dict(dict):
     """input dictionary class

@@ -61,7 +61,7 @@ def plot_poincare(self, toroidalIdx=0, prange="full", ax=None, **kwargs):
     if self.input.physics.Igeometry == 3:
         plt.xlabel("R [m]", fontsize=20)
         plt.ylabel("Z [m]", fontsize=20)
-        plt.axis("equal")
+        #plt.axis("equal")
     if self.input.physics.Igeometry == 2:
         plt.xlabel("X [m]", fontsize=20)
         plt.ylabel("Y [m]", fontsize=20)
@@ -73,4 +73,5 @@ def plot_poincare(self, toroidalIdx=0, prange="full", ax=None, **kwargs):
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
 
-    return
+    print(dots)
+    return dots

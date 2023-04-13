@@ -66,7 +66,6 @@ def plot_modB(
             plotZ[i * nr : (i + 1) * nr, :] = Z[:, :, 0]
 
         plotB[i * nr : (i + 1) * nr, :] = modB[:, :, 0]
-
     plot = ax.pcolormesh(plotR[:, :], plotZ[:, :], plotB[:, :], **kwargs)
     if Igeometry == 1:
         ax.set_xlabel(r"$\theta$")
@@ -76,7 +75,7 @@ def plot_modB(
         ax.set_xlabel(r"$X$")
         ax.set_ylabel(r"$Y$")
     if Igeometry == 3:
-        ax.set_aspect("equal")
+        #ax.set_aspect("equal")
         ax.set_xlabel(r"$R$")
         ax.set_ylabel(r"$Z$")
 
@@ -84,3 +83,31 @@ def plot_modB(
         cbar = plt.colorbar(plot, ax=ax)
         cbar.set_label(r"$|\vec B|$", rotation=0)
     return
+
+
+def plot_fmn(self, intf, ntheta, **kwargs):  
+
+    tarr=np.linspace(0, 2 * np.pi, ntheta, endpoint=False)
+    zarr=np.linspace(0, 0, 1)
+
+    sarr = np.array([1.0])
+    R, Z, jacobian, g = self.get_grid_and_jacobian_and_metric(
+            lvol=intf, sarr=sarr, tarr=tarr, zarr=zarr)
+    Bcontrav = self.get_B(
+        lvol=intf, jacobian=jacobian, sarr=sarr, tarr=tarr, zarr=zarr)
+    
+    f_th_zeta_1 = np.sqrt(np.einsum("...i,...ji,...j->...", Bcontrav, g, Bcontrav))[0,:,0]
+
+    sarr = np.array([-1.0])
+    R, Z, jacobian, g = self.get_grid_and_jacobian_and_metric(
+            lvol=intf+1, sarr=sarr, tarr=tarr, zarr=zarr)
+    Bcontrav = self.get_B(
+        lvol=intf+1, jacobian=jacobian, sarr=sarr, tarr=tarr, zarr=zarr)
+    
+    f_th_zeta_2 = np.sqrt(np.einsum("...i,...ji,...j->...", Bcontrav, g, Bcontrav))[0,:,0]
+
+    f_jump = f_th_zeta_2**2 - f_th_zeta_1**2
+
+    f_mn = np.real(np.fft.rfft(f_jump))
+
+    return f_jump, f_mn
