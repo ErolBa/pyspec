@@ -13,6 +13,7 @@ import warnings
 import sympy as sym
 import glob
 from scipy.interpolate import RectBivariateSpline, InterpolatedUnivariateSpline
+import matplotlib
 from scipy.fftpack import fft
 import matplotlib.animation as anim
 from IPython.display import HTML
@@ -328,6 +329,16 @@ class HMHDslab():
 
         # subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+    def set_hmhd_pres(pre_string):
+        # change the pressure in prob.f90 of HMHD
+
+        ## divison sign must have backslash before it (not '/', but '\/')
+
+        sed_string_den = f"sed -i  '/.*\!/!s/.*prei(i,k)=1.00.*/\tprei(i,k)=1.00*{pre_string}/' ~/HMHD2D/prob.f"
+        subprocess.run(sed_string_den, shell=True)
+
+        # subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
     def set_hmhd_heatcond(perp_cond, para_cond, flag_cond):
         # change the parallel and perpendicular heat conductivities in equation.f90
@@ -504,15 +515,21 @@ class HMHDslab():
         ind[:len(ind)//2] -= 1
         return scalar[:, ind]
 
-    def plot_scalar(fname, field_name, nx=250, nz=250, ncont=70, xlims=[-2, 2], ylims=[-np.pi, np.pi]):
+    def plot_scalar(fname, field_name, nx=250, nz=250, ncont=70, xlims=None, ylims=[-np.pi, np.pi], fig=None):
 
-        fig, ax = plt.subplots()
+        if(fig is None):
+            fig, ax = plt.subplots()
+        else:
+            ax = fig.gca()
 
         with h5py.File(fname,'r') as h5:
             x = h5["x"][2:-1]
             z = h5["z"][2:-2]
             field = HMHDslab.roll_scalar(h5[field_name][2:-2, 2:-1])
             psi = HMHDslab.roll_scalar(h5['psi'][2:-2, 2:-1]) * -1.0
+
+        if(xlims is None):
+            xlims = [np.min(x), np.max(x)]
 
         x_interp = np.linspace(np.min(x), np.max(x), nx, endpoint=True)
         z_interp = np.linspace(np.min(z), np.max(z), nz, endpoint=True)
@@ -566,85 +583,70 @@ class HMHDslab():
             pl5 = ax.plot(cont_pts[np.argmin(cont_pts[:,0]), 0],cont_pts[np.argmin(cont_pts[:,0]), 1],'rX', ms=9)
             pl6 = ax.plot(xm_main[o_point], zm_main[o_point],'ro', ms=9)
 
-        ax.set_title(r"HMHD $\bf{ " + '{:}'.format(field_name) + "}$ "+ f"{fname}")
+        ax.set_title(r"HMHD $\bf{ " + '{:}'.format(field_name) + "}$ "+ f"{fname[:-4]}")
         ax.set_xlabel("y")
         ax.set_ylabel("x")
         ax.set_xlim(xlims)
         ax.set_ylim(ylims)
 
-    def plot_vecfield(fname, field_name, nx=250, nz=250, ncont=70, xlims=[-2.5, 2.5], ylims=[-np.pi, np.pi]):
+        # ax.text(0.24*np.max(xm_main), -3, fname[:-4], fontsize=11, fontweight='normal', bbox=dict(facecolor='white', alpha=0.8))
 
-        fig, ax = plt.subplots()
+        return xm_main, zm_main, field_interp_val, cont_pts
 
-        with h5py.File(fname,'r') as h5:
-            x = h5["x"][2:-1]
-            z = h5["z"][2:-2]
-            field = HMHDslab.roll_scalar(h5[field_name][2:-2, 2:-1])
-            psi = HMHDslab.roll_scalar(h5['psi'][2:-2, 2:-1]) * -1.0
+    def plot_scalar_3d(args):
 
-            vx = h5["vx"][2:-2, 2:-1]
-            vz = h5["vz"][2:-2, 2:-1]
+        from matplotlib.widgets import Button
 
-        x_interp = np.linspace(np.min(x), np.max(x), nx, endpoint=True)
-        z_interp = np.linspace(np.min(z), np.max(z), nz, endpoint=True)
-        xm_main, zm_main = np.meshgrid(x_interp, z_interp)
+        matplotlib.rcParams['keymap.back'].remove('left')
+        matplotlib.rcParams['keymap.forward'].remove('right')
 
-        field_interp_spline = RectBivariateSpline(z, x, field)
-        field_interp_val = field_interp_spline(z_interp, x_interp, grid=True)
+        print("Use arrow keys to navigate...\ntop/down - change field\nleft/right - change frame")
 
-        contf = ax.contourf(xm_main, zm_main, field_interp_val[:,:], levels=50, alpha=0.9)
-        cont = ax.contour(xm_main, zm_main, field_interp_val[:,:], levels=30, alpha=0, colors='black', linestyles='solid')
-        # cbar = fig.colorbar(contf, format='{x:.3f}')
+        if(len(args)<2):
+            raise ValueError("Invalid input...")
 
-        vecfield = ax.streamplot(x, z, vx, vz, 5, color=np.sqrt(vx**2+vz**2), cmap='plasma')
-        cbar = fig.colorbar(vecfield.lines, ax=ax)
+        root_fname = args[1] + '/data'
+        fields = ['bx', 'by', 'bz', 'den', 'ex', 'ey', 'ez', 'jx', 'jy', 'jz', 'pre', 'psi', 'vx', 'vy', 'vz']
 
-        psi_interp_spline = RectBivariateSpline(z, x, psi)
-        psi_interp_val = psi_interp_spline(z_interp, x_interp, grid=True)
+        y_pos = 0.02
+        y_height = 0.06
 
-        field_interp_spline = RectBivariateSpline(z, x, field)
-        field_interp_val = field_interp_spline(z_interp, x_interp, grid=True)
+        fig = plt.figure(figsize=(9,8))
 
-        psi_main = psi_interp_val
+        callback = Index(root_fname, fields, fig)
 
-        o_point = np.unravel_index((psi_main[:,:]).argmin(), psi_main[:,:].shape)
-        x_point = np.unravel_index(((psi_main[:,:])**2).argmin(), psi_main[:,:].shape)
+        axprev = fig.add_axes([0.58, y_pos, 0.18, y_height])
+        axnext = fig.add_axes([0.78, y_pos, 0.18, y_height])
+        bnext = Button(axnext, 'Next frame')
+        bnext.on_clicked(callback.next)
+        bprev = Button(axprev, 'Prev frame')
+        bprev.on_clicked(callback.prev)
 
-        fig2, ax2 = plt.subplots()
-        levels = np.linspace(psi_main[o_point], psi_main[x_point], ncont)[1:-1]
-        c2 = ax2.contour(xm_main, zm_main, psi_main[:,:], levels=levels, colors='black', linestyles='solid', alpha=0)
-        plt.close(fig2)
+        axprev2 = fig.add_axes([0.05, y_pos, 0.18, y_height])
+        axnext2 = fig.add_axes([0.25, y_pos, 0.18, y_height])
+        bnext2 = Button(axnext2, 'Next field')
+        bnext2.on_clicked(callback.next_field)
+        bprev2 = Button(axprev2, 'Prev field')
+        bprev2.on_clicked(callback.prev_field)
 
-        max_closed_ind = -1
-        for i in range(len(c2.collections)):
-            verts = c2.collections[i].get_paths()[0].vertices
-            if(len(c2.collections[i].get_paths()) == 1 and np.linalg.norm(verts[-1]-verts[0]) < 1e-5):
-                max_closed_ind = i
-        cont_pts = [c2.collections[max_closed_ind].get_paths()[0].vertices]
+        def on_press(event):
+            sys.stdout.flush()
+            if event.key == 'left':
+                callback.prev(None)
+                fig.canvas.draw()
+            elif event.key == 'right':
+                callback.next(None)
+                fig.canvas.draw()
+            elif event.key == 'up':
+                callback.next_field(None)
+                fig.canvas.draw()
+            elif event.key == 'down':
+                callback.prev_field(None)
+                fig.canvas.draw()
+        fig.canvas.mpl_connect('key_press_event', on_press)
 
-        if(len(cont_pts) < 1):
-            island_w = 0.0
-        else:
-            cont_pts = np.concatenate(cont_pts)
-            island_w = np.max(cont_pts[:, 1]) - np.min(cont_pts[:, 1])
-            r_up = np.max(cont_pts[:, 1])
-            r_down = np.min(cont_pts[:, 1])
-
-            r_x = cont_pts[np.argmin(cont_pts[:,0]), 1]
-            Asym = (r_up-r_x)/(r_x-r_down+1e-12) - 1
-
-            pl1 = ax.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=1.2)
-            pl2 = ax.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=0.8)
-            pl3 = ax.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=0.8)
-            pl4 = ax.axhline(r_x, color='k', linestyle='dashed', lw=0.8)
-            pl5 = ax.plot(cont_pts[np.argmin(cont_pts[:,0]), 0],cont_pts[np.argmin(cont_pts[:,0]), 1],'rX', ms=9)
-            pl6 = ax.plot(xm_main[o_point], zm_main[o_point],'ro', ms=9)
-
-        ax.set_title(r"HMHD $\bf{ " + '{:}'.format(field_name) + "}$ "+ f"{fname}")
-        ax.set_xlabel("y")
-        ax.set_ylabel("x")
-        ax.set_xlim(xlims)
-        ax.set_ylim(ylims)
+        plt.tight_layout()
+        plt.show()
 
 
     def animate_field_helper(frame, root_fname, field_name, nx=250, nz=250, ncont=70, xlims=[-2, 2], ylims=[-np.pi, np.pi]):
@@ -979,6 +981,8 @@ class HMHDslab():
             plt.ylabel("R", fontsize=18)
             plt.tight_layout()
 
+            plt.text(4.32, 0.18, outfile[:-4], fontsize=11, fontweight='normal', bbox=dict(facecolor='white', alpha=0.8))
+
         # print(f"HMHD Island width {island_w:.8f}")
 
         return island_w, Asym
@@ -1100,12 +1104,33 @@ class HMHDslab():
         plt.legend()
         return np.array(widths), np.array(A_s)
 
-    def find_psi_perturbed(k, psi0_fun, by_fun, d2by_fun, numpts_xmesh=32, flag_BCs=0):
+    def find_psi_perturbed(k, psi0_fun, by_fun, d2by_fun, numpts_xmesh=32, flag_BCs=0, domain_wall_halfpos=np.pi):
+        """Calculates the perturbed flux function for a classical tearing mode in slab geometry
+
+        Args:
+            k (double): wavenumber (2*np.pi/L)
+            psi0_fun (func): initial flux function
+            by_fun (func): initial magnetic field in theta
+            d2by_fun (func): deriviative of initial theta magnetic field
+            numpts_xmesh (int, optional): number of x mesh points. Defaults to 32.
+            flag_BCs (int, optional): what boundary condition to use for the perturbed flux function. Defaults to 0.
+
+        Returns:
+            sol_left(dict): solution in the left side of domain
+            sol_right(dict): solution in the right side of domain 
+        """
 
         # have to solve left and right regions
         # for loureiro the two are symmetric
         # but not in general
 
+        if(domain_wall_halfpos is None):
+            # need to compute the domain wall, which is where by=0
+            # assume symmetry in x (only look at the right side x>0)
+            x_temp = np.linspace(1e-1, np.pi, 400)
+            y_temp = by_fun(x_temp)
+            domain_wall_halfpos = x_temp[np.argmin(y_temp**2)-1]
+        
         def f(x):
             return k**2 + d2by_fun(x) / by_fun(x)
 
@@ -1127,7 +1152,9 @@ class HMHDslab():
         else:
             return None
 
-        x_init = np.linspace(1e-10, np.pi, numpts_xmesh)
+
+
+        x_init = np.linspace(1e-10, domain_wall_halfpos, numpts_xmesh)
         y_init = np.zeros((2, x_init.shape[0]))
         y_init[0] = psi0_fun(x_init)
         y_init[1] = by_fun(x_init)
@@ -1141,6 +1168,11 @@ class HMHDslab():
 
         sol_left = integrate.solve_bvp(linsys_fun, bc_left, x_init, y_init,
                   p=None, S=None, fun_jac=None, bc_jac=None, tol=0.001, max_nodes=1000, verbose=0, bc_tol=None)
+
+        if(sol_left.status!=0 or sol_right.status!=0):
+            print("Error in find_psi_perturbed():")
+            print(f"\tsol_left.message: {sol_left.message} (status {sol_left.status})")
+            print(f"\tsol_right.message: {sol_right.message} (status {sol_right.status})")
 
         return sol_left, sol_right
 
@@ -1162,7 +1194,9 @@ class HMHDslab():
 
         return output_dict
 
-    def eval_delprime_sym(psi0_string, psi0_mag, x=None, k=None):
+    def eval_delprime_sym(psi0_string, psi0_mag, x=None, k=None, plot=False, figsize=(10, 5), numpts_xmesh=128, domain_wall_halfpos=np.pi):
+
+        a = 0.35
 
         if(x is not None):
             k = 2 * np.pi / x
@@ -1174,21 +1208,33 @@ class HMHDslab():
         psi0_fun = lambda x: sym_config['psi'](x, psi0_mag)
         by_fun = lambda x: sym_config['by'](x, psi0_mag)
         d2by_fun = lambda x: sym_config['d2by'](x, psi0_mag)
-
-        sol_left, sol_right = HMHDslab.find_psi_perturbed(k, psi0_fun, by_fun, d2by_fun, 128, 0)
+    
+        sol_left, sol_right = HMHDslab.find_psi_perturbed(k, psi0_fun, by_fun, d2by_fun, numpts_xmesh, 0, domain_wall_halfpos)
 
         delprime = (sol_right.y[1,0] - sol_left.y[1,-1]) / sol_right.y[0,0]
         sigprime = (sol_right.y[1,0] + sol_left.y[1,-1]) / sol_right.y[0,0]
 
-        # plt.figure()
-        # plt.plot(sol_left.x,sol_left.y[0], label="$\psi\'$ left")
-        # plt.plot(sol_right.x,sol_right.y[0], label="$\psi\'$ right")
-        # plt.legend()
-        #
-        # plt.figure()
-        # plt.plot(sol_left.x,sol_left.y[1], label="$d\psi\'/dx$ left")
-        # plt.plot(sol_right.x,sol_right.y[1], label="$d\psi\'/dx$ right")
-        # plt.legend()
+        if(plot):
+            fig, (ax1, ax2) = plt.subplots(2, 1, sharex=True)
+            fig.set_size_inches(figsize)
+
+            # x_fact = 1/k
+            x_fact = 1
+
+            ax1.plot(sol_left.x * x_fact, sol_left.y[0])
+            ax1.plot(sol_right.x * x_fact, sol_right.y[0])
+            ax1.set_title("Perturbed flux function $\Psi_{p}$" + f"  ($\Delta' a$={delprime*a:.3f})")
+            ax1.axhline(0, color='k', alpha=0.5)
+            ax1.axvline(0, color='k', alpha=0.5)
+            ax1.set_xlim(-np.pi, np.pi)
+                
+            ax2.plot(sol_left.x * x_fact, sol_left.y[1])
+            ax2.plot(sol_right.x * x_fact, sol_right.y[1])
+            ax2.set_title("Derivative of pert flux function $d\Psi_{p}/dr$")
+            ax2.axhline(0, color='k', alpha=0.5)
+            ax2.axvline(0, color='k', alpha=0.5)
+            ax2.set_xlabel("Radial coordinate r")
+            ax2.set_xlim(-np.pi, np.pi)
 
         return delprime, sigprime
 
@@ -1214,11 +1260,12 @@ class HMHDslab():
         initial_config = {'psi':psi0, 'by':by0, 'jz':jz0, 'bz':bz0, 'jy':jy0}
         return initial_config
 
-    def run_hmhd_case_pres_cond(inputs):
+    def run_hmhd_case_pres_cond(inputs, run=True):
 
         inputs.config = HMHDslab.gen_profiles_from_psi(inputs.psi_profile)
 
         HMHDslab.set_hmhd_dens(inputs.dens_profile)
+        HMHDslab.set_hmhd_pres(inputs.pres_profile)
         HMHDslab.set_hmhd_profiles(inputs.config)
         HMHDslab.set_hmhd_heatcond(inputs.heatcond_perp, inputs.heatcond_para, inputs.heatcond_flag)
         subprocess.run(f"cd ~/HMHD2D/build; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -1230,13 +1277,14 @@ class HMHDslab():
         HMHDslab.set_inputfile_var('Tearing', "eta", inputs.eta)
         HMHDslab.set_inputfile_var('Tearing', "bs_curr_const", inputs.bs_curr_const)
 
-        HMHDslab.run_hmhd(inputs.root_fname)
+        if(run):
+            HMHDslab.run_hmhd(inputs.root_fname)
 
-        print("".join(['-']*50))
-        print("--->> HMHD DONE <<---")
+            print("".join(['-']*50))
+            print("--->> HMHD DONE <<---")
 
-        inputs.files = sorted(glob.glob(inputs.root_fname + '/data*.hdf'))
-        inputs.num_files = len(inputs.files)
+            inputs.files = sorted(glob.glob(inputs.root_fname + '/data*.hdf'))
+            inputs.num_files = len(inputs.files)
 
 
     def whats_the_convention_again():
@@ -1312,6 +1360,92 @@ class interp2d(object):
             # if we had to make a copy, update the provided output array
             out[:] = _out
         return _out
+
+class Index:
+    def __init__(self, root_fname, fields, fig):
+        self.ind = 0
+        self.field_ind = 11
+        self.num_frames = len(glob.glob(root_fname+"*.hdf"))
+        self.num_fields = len(fields)
+        self.root_fname = root_fname
+        self.fields = fields
+
+        x, y, f, cont_pts = HMHDslab.plot_scalar(self.root_fname+'0001.hdf', self.fields[self.field_ind], nx=200, nz=100, ncont=70, xlims=None, ylims=None)
+        plt.close()
+
+        ax =fig.add_subplot(projection='3d')
+        self.ax = ax
+
+        surf = ax.plot_surface(x, y, f, edgecolor='navy', lw=0.2, rstride=3, cstride=3, alpha=0.9, cmap='plasma')
+
+        plane_offset = np.min(f)-(np.max(f)-np.min(f))*0.15
+        ax.contourf(x, y, f, zdir='z', offset=plane_offset, levels=50, cmap='plasma', alpha=0.8)
+        ax.plot(cont_pts[:,0], cont_pts[:,1], plane_offset, 'r-', lw=2.5, alpha=1)
+
+        ax.set_xlabel("Theta")
+        ax.set_ylabel("Radial")
+        ax.set_zlabel(self.fields[self.field_ind])
+        ax.set_title(f"Plotting {self.fields[self.field_ind]} for {self.root_fname+f'{self.ind:04}.hdf'}")
+
+        ax.set_xlim(np.min(x), np.max(x))
+        ax.set_ylim(np.min(y), np.max(y))
+        ax.set_zlim(plane_offset, np.max(f))
+
+        labels = ax.zaxis.get_ticklabels()
+        labelstr = "".join([str(l.get_position()[0]) for l in labels])
+        if("e-" in labelstr):
+            ax.zaxis.get_offset_text().set_visible(False)
+            exponent = int('{:.2e}'.format(np.min(f)).split('e')[1])
+            ax.set_zlabel(ax.get_zlabel() + ' ($\\times\\mathdefault{10^{%d}}\\mathdefault{}$)' % exponent, fontsize=14, labelpad=8.0)
+
+
+    def plot_frame(self):
+        ax = self.ax
+        curr_lims = ax.get_xlim(), ax.get_ylim()
+        fname = self.root_fname+f'{self.ind+1:04}.hdf'
+        x, y, f, cont_pts = HMHDslab.plot_scalar(fname, self.fields[self.field_ind], nx=200, nz=100, ncont=70, xlims=None, ylims=None)
+        plt.close()
+        ax.cla()
+        surf = ax.plot_surface(x, y, f, edgecolor='navy', lw=0.2, rstride=3, cstride=3, alpha=0.9, cmap='plasma')
+        plane_offset = np.min(f)-(np.max(f)-np.min(f))*0.15
+        ax.contourf(x, y, f, zdir='z', offset=plane_offset, levels=50, cmap='plasma', alpha=0.8)
+        ax.plot(cont_pts[:,0], cont_pts[:,1], plane_offset, 'r-', lw=2.5, alpha=1.0)
+        ax.set_xlim(curr_lims[0])
+        ax.set_ylim(curr_lims[1])
+        ax.set_zlim(plane_offset, np.max(f))
+        ax.set_title(f"Plotting {self.fields[self.field_ind]} for {fname}")
+        ax.set_xlabel("Theta")
+        ax.set_ylabel("Radial")
+        ax.set_zlabel(self.fields[self.field_ind])
+
+        labels = ax.zaxis.get_ticklabels()
+        labelstr = "".join([str(l.get_position()[0]) for l in labels])
+        if("e-" in labelstr):
+            ax.zaxis.get_offset_text().set_visible(False)
+            exponent = int('{:.2e}'.format(np.min(f)).split('e')[1])
+            ax.set_zlabel(ax.get_zlabel() + ' ($\\times\\mathdefault{10^{%d}}\\mathdefault{}$)' % exponent, fontsize=14, labelpad=8.0)
+
+        plt.draw()
+
+    def next(self, event):
+        self.ind += 1
+        self.ind %= self.num_frames
+        self.plot_frame()
+
+    def prev(self, event):
+        self.ind -= 1
+        self.ind %= self.num_frames
+        self.plot_frame()
+
+    def next_field(self, event):
+        self.field_ind += 1
+        self.field_ind %= self.num_fields
+        self.plot_frame()
+
+    def prev_field(self, event):
+        self.field_ind -= 1
+        self.field_ind %= self.num_fields
+        self.plot_frame()
 
 @numba.njit(parallel=True, fastmath=True, cache=True, error_model='numpy')
 def splev2(tx, nx, ty, ny, c, k, x, y, m, z, dx, dy, nnx, nny):

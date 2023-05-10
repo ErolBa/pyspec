@@ -153,20 +153,23 @@ class SPECslab():
         return H
 
     def get_hessian_new(fname):
+
         # reads the hessian from .hessian file, apparently made prior to fourier transforms
         if(fname[-3:] == '.sp'):
-            fname = fname[:-3] + ".hessian"
+            fname = fname + ".hessian"
         elif(fname[-3:] == '.h5'):
-            fname = fname[:-6]+".hessian"
+            fname = fname[:-3]+".hessian"
         elif(fname[-4:] == '.end'):
-            fname = fname[:-7]+".hessian"
+            fname = fname[:-4]+".hessian"
+        elif(fname[-8:] == ".hessian"):
+            fname = fname
         else:
             raise ValueError("Invalid file given to get_hessian()")
 
         def read_int(fid):
             return np.fromfile(fid, 'int32',1)
 
-        with open('.'+fname, 'rb') as fid:
+        with open(fname, 'rb') as fid:
             read_int(fid)
             NGdof = int(read_int(fid))
             read_int(fid)
@@ -526,7 +529,7 @@ class SPECslab():
             return
 
         if(title is None):
-            title = fname
+            title = f"KAM surfaces ({fname})"
 
         fig, ax = plt.subplots(1,1)
         myspec = SPECout(fname)
@@ -701,7 +704,7 @@ class SPECslab():
             # plt.contourf(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.9)
             # plt.colorbar()
             plt.contour(Tarr, Rarr, Az[:,:,0], levels=20, alpha=1., colors='black', linestyles='solid')
-    
+
             # plot the res. volume bondary
             theta_bnd = np.linspace(0, 2*np.pi, 200)
             rarr_bnd, tarr_bnd, _ = SPECslab.get_rtarr(data, lvol, [-1,1], theta_bnd, np.array([0]))
@@ -738,17 +741,17 @@ class SPECslab():
             if(plot_title is None):
                 plot_title = f"SPEC island (width {island_w:.3f} Asym {Asym:.3f})"
                 # plot_title = f"SPEC island (width {island_w:.4f})"
-            plt.title(plot_title, fontsize=22)
+            plt.title(plot_title, fontsize=20)
             # plt.gcf().ca
             plt.gcf().canvas.manager.set_window_title(plot_title + f" w={island_w:.3f}")
             plt.ylim(ylims)
             plt.xlim(xlims)
-            plt.xlabel("$\\theta$", fontsize=18)
-            plt.ylabel("R", fontsize=18)
+            plt.xlabel("$\\theta$", fontsize=16)
+            plt.ylabel("R", fontsize=16)
             plt.tight_layout()
 
 
-        print(f"SPEC Island width {island_w:.8f}")
+        print(f"{fname}:  island width {island_w:.8f}  asym {Asym:.8f}")
 
         return island_w, Asym
 
