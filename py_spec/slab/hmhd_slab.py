@@ -20,11 +20,15 @@ from IPython.display import HTML
 import os
 import contextlib
 from tqdm.auto import tqdm
+import json
 
 class HMHDslab():
 
     def set_inputfile_var(file, varname, varvalue):
         subprocess.run(f"sed -i s/^{varname}=.*/{varname}="+f"{varvalue:.2e}".replace('e','D')+f"\ \ \ \ !auto\ insert\ with\ py/ i{file}", shell=True)
+
+    def set_inputfile_str(file, varname, varvalue):
+        subprocess.run(f"sed -i s/^{varname}=.*/{varname}="+f"'{varvalue}'"+f"\ \ \ \ !auto\ insert\ with\ py/ i{file}", shell=True)
 
     def get_hmhd_profiles(hmhd_fname, num_conts, mpol, plot_flag):
 
@@ -294,7 +298,7 @@ class HMHDslab():
         poem_results = 2.44 * delprime * a
         plt.plot(delprime*a, poem_results,'k-', label="POEM")
 
-    def set_hmhd_profiles(symm_config, make=False):
+    def set_hmhd_profiles(symm_config, hmhd_root_loc, make=False):
         # change the profiles in prob.f90 of HMHD
 
         ## divison sign must have backslash before it (not '/', but '\/')
@@ -305,55 +309,55 @@ class HMHDslab():
         # print("psii_string", psii_string)
         # print("byi_string", byi_string)
 
-        sed_string_psii = f"sed -i  '/.*\!/!s/.*psii(i,k)=1.00.*/\tpsii(i,k)=1.00*{psii_string}/' ~/HMHD2D/prob.f"
-        sed_string_byi = f"sed -i  '/.*\!/!s/.*byi(i,k)=1.00.*/\tbyi(i,k)=1.00*{byi_string}/' ~/HMHD2D/prob.f"
+        sed_string_psii = f"sed -i  '/.*\!/!s/.*psii(i,k)=1.00.*/\tpsii(i,k)=1.00*{psii_string}/' {hmhd_root_loc}/prob.f"
+        sed_string_byi = f"sed -i  '/.*\!/!s/.*byi(i,k)=1.00.*/\tbyi(i,k)=1.00*{byi_string}/' {hmhd_root_loc}/prob.f"
         subprocess.run(sed_string_psii, shell=True)
         subprocess.run(sed_string_byi, shell=True)
 
-        sed_string_psii = f"sed -i  '/.*\!/!s/.*psiii(i,k)=1.00.*/\tpsiii(i,k)=1.00*{psii_string}/' ~/HMHD2D/prob.f"
-        sed_string_byi = f"sed -i  '/.*\!/!s/.*byii(i,k)=1.00.*/\tbyii(i,k)=1.00*{byi_string}/' ~/HMHD2D/prob.f"
+        sed_string_psii = f"sed -i  '/.*\!/!s/.*psiii(i,k)=1.00.*/\tpsiii(i,k)=1.00*{psii_string}/' {hmhd_root_loc}/prob.f"
+        sed_string_byi = f"sed -i  '/.*\!/!s/.*byii(i,k)=1.00.*/\tbyii(i,k)=1.00*{byi_string}/' {hmhd_root_loc}/prob.f"
         subprocess.run(sed_string_psii, shell=True)
         subprocess.run(sed_string_byi, shell=True)
 
         if(make):
-            subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(f"cd {hmhd_root_loc}/build; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-    def set_hmhd_dens(den_string):
+    def set_hmhd_dens(den_string, hmhd_root_loc):
         # change the density in prob.f90 of HMHD
 
         ## divison sign must have backslash before it (not '/', but '\/')
 
-        sed_string_den = f"sed -i  '/.*\!/!s/.*deni(i,k)=1.00.*/\tdeni(i,k)=1.00*{den_string}/' ~/HMHD2D/prob.f"
+        sed_string_den = f"sed -i  '/.*\!/!s/.*deni(i,k)=1.00.*/\tdeni(i,k)=1.00*{den_string}/' {hmhd_root_loc}/prob.f"
         subprocess.run(sed_string_den, shell=True)
 
         # subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-    def set_hmhd_pres(pre_string):
+    def set_hmhd_pres(pre_string, hmhd_root_loc):
         # change the pressure in prob.f90 of HMHD
 
         ## divison sign must have backslash before it (not '/', but '\/')
 
-        sed_string_den = f"sed -i  '/.*\!/!s/.*prei(i,k)=1.00.*/\tprei(i,k)=1.00*{pre_string}/' ~/HMHD2D/prob.f"
+        sed_string_den = f"sed -i  '/.*\!/!s/.*prei(i,k)=1.00.*/\tprei(i,k)=1.00*{pre_string}/'  {hmhd_root_loc}/prob.f"
         subprocess.run(sed_string_den, shell=True)
 
         # subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
-    def set_hmhd_heatcond(perp_cond, para_cond, flag_cond):
+    def set_hmhd_heatcond(perp_cond, para_cond, flag_cond, hmhd_root_loc):
         # change the parallel and perpendicular heat conductivities in equation.f90
 
         if(flag_cond!=0 and flag_cond!=1):
             raise ValueError(f"flag_cond ({flag_cond}) in HMHDslab.set_hmhd_heatcond has to be 0 or 1 (numerical)")
-        sed_string_den = f"sed -i  '/.*\!/!s/#define THERMAL_CONDUCT.*/#define THERMAL_CONDUCT {flag_cond}/' ~/HMHD2D/inc.h"
+        sed_string_den = f"sed -i  '/.*\!/!s/#define THERMAL_CONDUCT.*/#define THERMAL_CONDUCT {flag_cond}/' {hmhd_root_loc}/inc.h"
         subprocess.run(sed_string_den, shell=True)
 
-        subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        sed_string_den = f"sed -i  '/.*\!/!s/.*k_para1=1.00.*/    k_para1=1.00* {para_cond}/' ~/HMHD2D/equation.f"
+        sed_string_den = f"sed -i  '/.*\!/!s/.*k_para1=1.00.*/    k_para1=1.00* {para_cond}/' {hmhd_root_loc}/equation.f"
         subprocess.run(sed_string_den, shell=True)
 
-        sed_string_den = f"sed -i  '/.*\!/!s/.*k_perp1=1.00.*/    k_perp1=1.00* {perp_cond}/' ~/HMHD2D/equation.f"
+        sed_string_den = f"sed -i  '/.*\!/!s/.*k_perp1=1.00.*/    k_perp1=1.00* {perp_cond}/' {hmhd_root_loc}/equation.f"
         subprocess.run(sed_string_den, shell=True)
 
         # subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -370,6 +374,20 @@ class HMHDslab():
         with change_dir(name):
             subprocess.run(f"cp ~/HMHD2D/build/globals.f90 .; cp ~/HMHD2D/build/prob.f90 .; cp ~/HMHD2D/build/equation.f90 .", shell=True)
             subprocess.run(f"mpirun -n {num_cpus} ~/HMHD2D/build/hmhd2d Tearing", shell=True)
+
+
+    def run_restart_hmhd(name, new_tmax, num_cpus=9):
+
+        name = name[:-6]
+        ind = name.find('/rs')
+        rootname = name[:ind]
+        fname = name[ind+1:]
+
+        with change_dir(rootname):
+            HMHDslab.set_inputfile_var('Tearing', 'tmax', new_tmax)
+            HMHDslab.set_inputfile_str('Tearing', 'rsifile', fname)
+            subprocess.run(f"mpirun -n {num_cpus} ~/HMHD2D/build/hmhd2d Tearing", shell=True)
+
 
     def animate_imshow(i):
         data = get_array_from_hdf("run_Tearing/"+f"data{i+1:04}.hdf","psi")
@@ -984,7 +1002,7 @@ class HMHDslab():
             plt.text(4.32, 0.18, outfile[:-4], fontsize=11, fontweight='normal', bbox=dict(facecolor='white', alpha=0.8))
 
         # print(f"HMHD Island width {island_w:.8f}")
-
+        # print("o-pt loc", xm_main[o_point])
         return island_w, Asym
 
     def get_width_As_rpmx_HMHD(outfile, nx=600, nz=600, ncont=600, plot=True, plot_title=None, xlims=[-2, 2], ylims=[-np.pi, np.pi]):
@@ -1070,21 +1088,22 @@ class HMHDslab():
         return island_w, Asym, r_up, r_down, r_x
 
 
-    def get_width_run(root_fname="run_Tearing"):
+    def get_width_run(root_fname="run_Tearing", num_frames=None):
         fnames_h5files = sorted(glob.glob(root_fname+"/data*.hdf"))
         w_sat_vals = []
         As_sat_vals = []
 
-        for f in tqdm(range(len(fnames_h5files))):
+        num_frames = len(fnames_h5files) if num_frames is None else num_frames
+
+        for f in tqdm(range(num_frames)):
             w_curr, As_curr = HMHDslab.get_width_As_HMHD(fnames_h5files[f], nx=260, nz=260, ncont=150, plot=False)
             w_sat_vals.append(w_curr)
             As_sat_vals.append(As_curr)
         w_sat_vals[0] = 0 # island at time 0 is 0
         return w_sat_vals, As_sat_vals
 
-    def plot_w_vs_time(root_fname):
-        widths, A_s = HMHDslab.get_width_run(root_fname)
-        plt.rcParams['figure.figsize'] = [13, 4]
+    def plot_w_vs_time(root_fname, num_frames=None):
+        widths, A_s = HMHDslab.get_width_run(root_fname, num_frames)
         plt.figure()
         plt.plot(widths, 'd--')
         plt.xlabel("iteration")
@@ -1117,7 +1136,7 @@ class HMHDslab():
 
         Returns:
             sol_left(dict): solution in the left side of domain
-            sol_right(dict): solution in the right side of domain 
+            sol_right(dict): solution in the right side of domain
         """
 
         # have to solve left and right regions
@@ -1130,7 +1149,7 @@ class HMHDslab():
             x_temp = np.linspace(1e-1, np.pi, 400)
             y_temp = by_fun(x_temp)
             domain_wall_halfpos = x_temp[np.argmin(y_temp**2)-1]
-        
+
         def f(x):
             return k**2 + d2by_fun(x) / by_fun(x)
 
@@ -1208,7 +1227,7 @@ class HMHDslab():
         psi0_fun = lambda x: sym_config['psi'](x, psi0_mag)
         by_fun = lambda x: sym_config['by'](x, psi0_mag)
         d2by_fun = lambda x: sym_config['d2by'](x, psi0_mag)
-    
+
         sol_left, sol_right = HMHDslab.find_psi_perturbed(k, psi0_fun, by_fun, d2by_fun, numpts_xmesh, 0, domain_wall_halfpos)
 
         delprime = (sol_right.y[1,0] - sol_left.y[1,-1]) / sol_right.y[0,0]
@@ -1227,7 +1246,7 @@ class HMHDslab():
             ax1.axhline(0, color='k', alpha=0.5)
             ax1.axvline(0, color='k', alpha=0.5)
             ax1.set_xlim(-np.pi, np.pi)
-                
+
             ax2.plot(sol_left.x * x_fact, sol_left.y[1])
             ax2.plot(sol_right.x * x_fact, sol_right.y[1])
             ax2.set_title("Derivative of pert flux function $d\Psi_{p}/dr$")
@@ -1264,10 +1283,10 @@ class HMHDslab():
 
         inputs.config = HMHDslab.gen_profiles_from_psi(inputs.psi_profile)
 
-        HMHDslab.set_hmhd_dens(inputs.dens_profile)
-        HMHDslab.set_hmhd_pres(inputs.pres_profile)
-        HMHDslab.set_hmhd_profiles(inputs.config)
-        HMHDslab.set_hmhd_heatcond(inputs.heatcond_perp, inputs.heatcond_para, inputs.heatcond_flag)
+        HMHDslab.set_hmhd_dens(inputs.dens_profile, "~/HMHD2D")
+        HMHDslab.set_hmhd_pres(inputs.pres_profile, "~/HMHD2D")
+        HMHDslab.set_hmhd_profiles(inputs.config, "~/HMHD2D", False)
+        HMHDslab.set_hmhd_heatcond(inputs.heatcond_perp, inputs.heatcond_para, inputs.heatcond_flag, "~/HMHD2D")
         subprocess.run(f"cd ~/HMHD2D/build; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         HMHDslab.set_inputfile_var('Tearing', "tmax", inputs.tmax)
@@ -1285,6 +1304,18 @@ class HMHDslab():
 
             inputs.files = sorted(glob.glob(inputs.root_fname + '/data*.hdf'))
             inputs.num_files = len(inputs.files)
+
+            if(len(inputs.files) != inputs.tmax//inputs.tpltxint+2):
+                raise ValueError("Error: HMHD crashed (missing .hdf files)")
+
+    def run_hmhd_cluster(inputs):
+
+        json_fname = f'inputs_{inputs.root_fname}.json'
+        with open(json_fname, 'w') as fp:
+            json.dump(inputs, fp, indent=4)
+
+        run_str = f"ssh balkovic@jed 'cd ~/remote_tmp; cat - > {json_fname}; ~/codes/hmhd2d_spc/hmhd_scripts/run_hmhd_cluster.py {json_fname}' < {json_fname}"
+        subprocess.run(run_str, shell=True)
 
 
     def whats_the_convention_again():
@@ -1360,6 +1391,7 @@ class interp2d(object):
             # if we had to make a copy, update the provided output array
             out[:] = _out
         return _out
+
 
 class Index:
     def __init__(self, root_fname, fields, fig):
