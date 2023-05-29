@@ -351,6 +351,16 @@ class HMHDslab():
 
         HMHDslab.run_sed_safe(f".*k_perp1=1.00.*/    k_perp1=1.00* {perp_cond}", hmhd_root_loc+"/equation.f")
 
+    def set_hmhd_grid(nx, nz, ncpux, ncpuz, hmhd_root_loc):
+        # change the density in prob.f90 of HMHD
+
+        ## divison sign must have backslash before it (not '/', but '\/')
+
+        nx_part = nx // ncpux
+        nz_part = nz // ncpuz
+        HMHDslab.run_sed_safe(f".*INTEGER, PARAMETER :: nx0.*=.*nz0.*/\tINTEGER, PARAMETER :: nx0={nx_part}, nz0={nz_part}", hmhd_root_loc+"/globals.f90")
+
+        HMHDslab.run_sed_safe(f".*INTEGER, PARAMETER :: block_dim_x.*=.*block_dim_z.*/\tINTEGER, PARAMETER :: block_dim_x={ncpux}, block_dim_z={ncpuz}", hmhd_root_loc+"/globals.f90")
 
     def run_hmhd(name='run_Tearing', num_cpus=9):
         """
@@ -1286,8 +1296,10 @@ class HMHDslab():
         HMHDslab.set_inputfile_var('Tearing', "eta", inputs.eta)
         HMHDslab.set_inputfile_var('Tearing', "bs_curr_const", inputs.bs_curr_const)
 
+        HMHDslab.set_hmhd_grid(inputs.mesh_pts[1], inputs.mesh_pts[0], inputs.num_cpus[1], inputs.num_cpus[0], "~/HMHD2D")
+
         if(run):
-            HMHDslab.run_hmhd(inputs.root_fname)
+            HMHDslab.run_hmhd(inputs.root_fname, inputs.num_cpus[1]*inputs.num_cpus[0])
 
             print("".join(['-']*50))
             print("--->> HMHD DONE <<---")
@@ -1307,7 +1319,7 @@ class HMHDslab():
         run_str = f"ssh balkovic@jed 'cd ~/remote_tmp; mkdir {inputs.root_fname}; cd {inputs.root_fname}; cat - > {json_fname}; ~/codes/hmhd2d_spc/hmhd_scripts/run_hmhd_cluster.py {json_fname}' < {json_fname}"
         subprocess.run(run_str, shell=True)
 
-        subprocess.run(f"scp -r balkovic@jed:~/remote_tmp/{inputs.root_fname} .", shell=True)
+        subprocess.run(f"rm -r {inputs.root_fname}; scp -r balkovic@jed:~/remote_tmp/{inputs.root_fname} .", shell=True)
 
 
     def whats_the_convention_again():
