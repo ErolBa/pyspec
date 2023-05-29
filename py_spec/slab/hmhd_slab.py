@@ -298,6 +298,16 @@ class HMHDslab():
         poem_results = 2.44 * delprime * a
         plt.plot(delprime*a, poem_results,'k-', label="POEM")
 
+
+    def run_sed_safe(sed_string, fname):
+        # run sed command, but do not modify file date if contents do not change
+        # makes "make" not recompile same files
+
+        run_string = f"sed '/.*\!/!s/{sed_string}/' {fname} > {fname}.tmp" \
+            f"; rsync --ignore-times --checksum {fname}.tmp {fname}"
+
+        subprocess.run(run_string, shell=True)
+
     def set_hmhd_profiles(symm_config, hmhd_root_loc, make=False):
         # change the profiles in prob.f90 of HMHD
 
@@ -306,61 +316,40 @@ class HMHDslab():
         byi_string = str((symm_config['bz_sym'])).replace("exp", "???").replace("psi0","a").replace("Bz0","qpa").replace("x","z(k)").replace("/","\/").replace("???", "exp")
         byi_string = byi_string[:-1] + " - 4.0 * prei(i,k) )" # make sure initially there is force balance, even with finite, non-const pressure
 
-        # print("psii_string", psii_string)
-        # print("byi_string", byi_string)
+        HMHDslab.run_sed_safe(f".*psii(i,k)=1.00.*/\tpsii(i,k)=1.00*{psii_string}", hmhd_root_loc+"/prob.f")
+        HMHDslab.run_sed_safe(f".*byi(i,k)=1.00.*/\tbyi(i,k)=1.00*{byi_string}", hmhd_root_loc+"/prob.f")
 
-        sed_string_psii = f"sed -i  '/.*\!/!s/.*psii(i,k)=1.00.*/\tpsii(i,k)=1.00*{psii_string}/' {hmhd_root_loc}/prob.f"
-        sed_string_byi = f"sed -i  '/.*\!/!s/.*byi(i,k)=1.00.*/\tbyi(i,k)=1.00*{byi_string}/' {hmhd_root_loc}/prob.f"
-        subprocess.run(sed_string_psii, shell=True)
-        subprocess.run(sed_string_byi, shell=True)
-
-        sed_string_psii = f"sed -i  '/.*\!/!s/.*psiii(i,k)=1.00.*/\tpsiii(i,k)=1.00*{psii_string}/' {hmhd_root_loc}/prob.f"
-        sed_string_byi = f"sed -i  '/.*\!/!s/.*byii(i,k)=1.00.*/\tbyii(i,k)=1.00*{byi_string}/' {hmhd_root_loc}/prob.f"
-        subprocess.run(sed_string_psii, shell=True)
-        subprocess.run(sed_string_byi, shell=True)
+        HMHDslab.run_sed_safe(f".*psiii(i,k)=1.00.*/\tpsiii(i,k)=1.00*{psii_string}", hmhd_root_loc+"/prob.f")
+        HMHDslab.run_sed_safe(f".*byii(i,k)=1.00.*/\tbyii(i,k)=1.00*{byi_string}", hmhd_root_loc+"/prob.f")
 
         if(make):
             subprocess.run(f"cd {hmhd_root_loc}/build; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
 
     def set_hmhd_dens(den_string, hmhd_root_loc):
         # change the density in prob.f90 of HMHD
 
         ## divison sign must have backslash before it (not '/', but '\/')
 
-        sed_string_den = f"sed -i  '/.*\!/!s/.*deni(i,k)=1.00.*/\tdeni(i,k)=1.00*{den_string}/' {hmhd_root_loc}/prob.f"
-        subprocess.run(sed_string_den, shell=True)
-
-        # subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        HMHDslab.run_sed_safe(f".*deni(i,k)=1.00.*/\tdeni(i,k)=1.00*{den_string}", hmhd_root_loc+"/prob.f")
 
     def set_hmhd_pres(pre_string, hmhd_root_loc):
         # change the pressure in prob.f90 of HMHD
 
         ## divison sign must have backslash before it (not '/', but '\/')
 
-        sed_string_den = f"sed -i  '/.*\!/!s/.*prei(i,k)=1.00.*/\tprei(i,k)=1.00*{pre_string}/'  {hmhd_root_loc}/prob.f"
-        subprocess.run(sed_string_den, shell=True)
-
-        # subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
+        HMHDslab.run_sed_safe(f".*prei(i,k)=1.00.*/\tprei(i,k)=1.00*{pre_string}", hmhd_root_loc+"/prob.f")
 
     def set_hmhd_heatcond(perp_cond, para_cond, flag_cond, hmhd_root_loc):
         # change the parallel and perpendicular heat conductivities in equation.f90
 
         if(flag_cond!=0 and flag_cond!=1):
             raise ValueError(f"flag_cond ({flag_cond}) in HMHDslab.set_hmhd_heatcond has to be 0 or 1 (numerical)")
-        sed_string_den = f"sed -i  '/.*\!/!s/#define THERMAL_CONDUCT.*/#define THERMAL_CONDUCT {flag_cond}/' {hmhd_root_loc}/inc.h"
-        subprocess.run(sed_string_den, shell=True)
 
-        # subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        HMHDslab.run_sed_safe(f"#define THERMAL_CONDUCT.*/#define THERMAL_CONDUCT {flag_cond}", hmhd_root_loc+"/inc.h")
 
-        sed_string_den = f"sed -i  '/.*\!/!s/.*k_para1=1.00.*/    k_para1=1.00* {para_cond}/' {hmhd_root_loc}/equation.f"
-        subprocess.run(sed_string_den, shell=True)
+        HMHDslab.run_sed_safe(f".*k_para1=1.00.*/    k_para1=1.00* {para_cond}", hmhd_root_loc+"/equation.f")
 
-        sed_string_den = f"sed -i  '/.*\!/!s/.*k_perp1=1.00.*/    k_perp1=1.00* {perp_cond}/' {hmhd_root_loc}/equation.f"
-        subprocess.run(sed_string_den, shell=True)
-
-        # subprocess.run(f"cd ~/HMHD2D; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        HMHDslab.run_sed_safe(f".*k_perp1=1.00.*/    k_perp1=1.00* {perp_cond}", hmhd_root_loc+"/equation.f")
 
 
     def run_hmhd(name='run_Tearing', num_cpus=9):
@@ -1287,7 +1276,8 @@ class HMHDslab():
         HMHDslab.set_hmhd_pres(inputs.pres_profile, "~/HMHD2D")
         HMHDslab.set_hmhd_profiles(inputs.config, "~/HMHD2D", False)
         HMHDslab.set_hmhd_heatcond(inputs.heatcond_perp, inputs.heatcond_para, inputs.heatcond_flag, "~/HMHD2D")
-        subprocess.run(f"cd ~/HMHD2D/build; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        # subprocess.run(f"cd ~/HMHD2D/build; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(f"cd ~/HMHD2D/build; make", shell=True)
 
         HMHDslab.set_inputfile_var('Tearing', "tmax", inputs.tmax)
         HMHDslab.set_inputfile_var('Tearing', "tpltxint", inputs.tpltxint)
@@ -1314,8 +1304,10 @@ class HMHDslab():
         with open(json_fname, 'w') as fp:
             json.dump(inputs, fp, indent=4)
 
-        run_str = f"ssh balkovic@jed 'cd ~/remote_tmp; cat - > {json_fname}; ~/codes/hmhd2d_spc/hmhd_scripts/run_hmhd_cluster.py {json_fname}' < {json_fname}"
+        run_str = f"ssh balkovic@jed 'cd ~/remote_tmp; mkdir {inputs.root_fname}; cd {inputs.root_fname}; cat - > {json_fname}; ~/codes/hmhd2d_spc/hmhd_scripts/run_hmhd_cluster.py {json_fname}' < {json_fname}"
         subprocess.run(run_str, shell=True)
+
+        subprocess.run(f"scp -r balkovic@jed:~/remote_tmp/{inputs.root_fname} .", shell=True)
 
 
     def whats_the_convention_again():
