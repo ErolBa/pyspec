@@ -17,6 +17,7 @@ import contextlib
 import warnings
 import sympy as sym
 from scipy.optimize import minimize_scalar
+from copy import deepcopy
 
 class SPECslab():
     """
@@ -2051,6 +2052,7 @@ class SPECslab():
 class input_dict(dict):
     """input dictionary class
         -> with dot.notation access to dictionary attributes"""
+
     __getattr__ = dict.get
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
@@ -2064,6 +2066,9 @@ class input_dict(dict):
                 return True
             else:
                 return False
+
+    def copy(self, memo=None):
+        return input_dict(deepcopy(dict(self), memo=memo))
 
 @numba.njit(cache=True)
 def check_intersect_helper(x, nvol):

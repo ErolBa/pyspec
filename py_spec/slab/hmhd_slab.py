@@ -21,6 +21,8 @@ import os
 import contextlib
 from tqdm.auto import tqdm
 import json
+from textwrap import dedent
+from joblib import Parallel, delayed
 
 class HMHDslab():
 
@@ -917,6 +919,7 @@ class HMHDslab():
             psi *= -1.0
             x = h5["x"][2:-1]
             z = h5["z"][2:-2]
+            time = h5["ttime"][0]
 
         if(xlims is None):
             xlims = [np.min(x), np.max(x)]
@@ -1002,7 +1005,8 @@ class HMHDslab():
 
         # print(f"HMHD Island width {island_w:.8f}")
         # print("o-pt loc", xm_main[o_point])
-        return island_w, Asym
+
+        return island_w, Asym, time
 
     def get_width_As_rpmx_HMHD(outfile, nx=600, nz=600, ncont=600, plot=True, plot_title=None, xlims=[-2, 2], ylims=[-np.pi, np.pi]):
 
@@ -1091,21 +1095,31 @@ class HMHDslab():
         fnames_h5files = sorted(glob.glob(root_fname+"/data*.hdf"))
         w_sat_vals = []
         As_sat_vals = []
+        time_vals = []
 
         num_frames = len(fnames_h5files) if num_frames is None else num_frames
 
-        for f in tqdm(range(num_frames)):
-            w_curr, As_curr = HMHDslab.get_width_As_HMHD(fnames_h5files[f], nx=260, nz=260, ncont=150, plot=False)
-            w_sat_vals.append(w_curr)
-            As_sat_vals.append(As_curr)
-        w_sat_vals[0] = 0 # island at time 0 is 0
-        return w_sat_vals, As_sat_vals
+        def get_individ_run(fname):
+            return np.asarray(HMHDslab.get_width_As_HMHD(fname, nx=400, nz=400, ncont=250, plot=False))
+
+        # find withds for each frame in parallel (multiple processes)
+        results = np.array(
+            Parallel(n_jobs=8, prefer="processes")(
+                delayed(get_individ_run)(fnames_h5files[i]) for i in tqdm(range(num_frames))
+            )
+        )
+
+        w_sat_vals = results[:,0]
+        As_sat_vals = results[:,1]
+        time_vals = results[:,2]
+
+        return w_sat_vals, As_sat_vals, time_vals
 
     def plot_w_vs_time(root_fname, num_frames=None):
-        widths, A_s = HMHDslab.get_width_run(root_fname, num_frames)
+        widths, A_s, times = HMHDslab.get_width_run(root_fname, num_frames)
         plt.figure()
-        plt.plot(widths, 'd--')
-        plt.xlabel("iteration")
+        plt.plot(times, widths, 'd--')
+        plt.xlabel("Alfven time")
         plt.ylabel("Island width")
         return np.array(widths), np.array(A_s)
 
@@ -1286,6 +1300,10 @@ class HMHDslab():
         HMHDslab.set_hmhd_pres(inputs.pres_profile, "~/HMHD2D")
         HMHDslab.set_hmhd_profiles(inputs.config, "~/HMHD2D", False)
         HMHDslab.set_hmhd_heatcond(inputs.heatcond_perp, inputs.heatcond_para, inputs.heatcond_flag, "~/HMHD2D")
+
+
+        HMHDslab.set_hmhd_grid(inputs.mesh_pts[1], inputs.mesh_pts[0], inputs.num_cpus[1], inputs.num_cpus[0], "~/HMHD2D")
+
         # subprocess.run(f"cd ~/HMHD2D/build; make", shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         subprocess.run(f"cd ~/HMHD2D/build; make", shell=True)
 
@@ -1295,8 +1313,6 @@ class HMHDslab():
         HMHDslab.set_inputfile_var('Tearing', "dt", inputs.dt) # d is 2e-3
         HMHDslab.set_inputfile_var('Tearing', "eta", inputs.eta)
         HMHDslab.set_inputfile_var('Tearing', "bs_curr_const", inputs.bs_curr_const)
-
-        HMHDslab.set_hmhd_grid(inputs.mesh_pts[1], inputs.mesh_pts[0], inputs.num_cpus[1], inputs.num_cpus[0], "~/HMHD2D")
 
         if(run):
             HMHDslab.run_hmhd(inputs.root_fname, inputs.num_cpus[1]*inputs.num_cpus[0])
@@ -1310,16 +1326,60 @@ class HMHDslab():
             if(len(inputs.files) != inputs.tmax//inputs.tpltxint+2):
                 raise ValueError("Error: HMHD crashed (missing .hdf files)")
 
+    def hmhd_get_beta_bsfrac(fname):
+        with h5py.File(fname) as f:
+            jbs = f['misc'][2:-2,2:-2]
+            jy = f['jy'][2:-2,2:-2]
+            p = f['pre'][2:-2,2:-2]
+
+        sliceind = jy.shape[1]//2
+        smalljy = -jy[:, sliceind]
+        smalljbs = jbs[:, sliceind]
+        frac_jbs = smalljbs[1]/np.std(smalljy)
+
+        beta = 2*np.mean(p) / 10**2
+
+        return beta, frac_jbs
+
     def run_hmhd_cluster(inputs):
 
         json_fname = f'inputs_{inputs.root_fname}.json'
         with open(json_fname, 'w') as fp:
             json.dump(inputs, fp, indent=4)
 
-        run_str = f"ssh balkovic@jed 'cd ~/remote_tmp; mkdir {inputs.root_fname}; cd {inputs.root_fname}; cat - > {json_fname}; ~/codes/hmhd2d_spc/hmhd_scripts/run_hmhd_cluster.py {json_fname}' < {json_fname}"
-        subprocess.run(run_str, shell=True)
+        run_str = f"""
+            ssh balkovic@jed '
+            cd ~/remote_tmp;
+            rm -r {inputs.root_fname};
+            mkdir {inputs.root_fname};
+            cd {inputs.root_fname};
+            cat - > {json_fname};
+            ~/codes/hmhd2d_spc/hmhd_scripts/run_hmhd_cluster.py {json_fname}
+            ' < {json_fname};
+            rm -r {inputs.root_fname};
+            scp -r balkovic@jed:~/remote_tmp/{inputs.root_fname} .
+            echo "Done ({inputs.root_fname})";
+            mv {json_fname} {inputs.root_fname}
+        """
 
-        subprocess.run(f"rm -r {inputs.root_fname}; scp -r balkovic@jed:~/remote_tmp/{inputs.root_fname} .", shell=True)
+        # subprocess.Popen(dedent(run_str), shell=True)
+
+        proc = subprocess.Popen(dedent(run_str), shell=True)
+        return proc
+
+    def restart_cluster(root_name, rsifile, new_tmax):
+
+        run_str = f"""
+            ssh balkovic@jed '
+            cd ~/remote_tmp;
+            cd {root_name};
+            ~/codes/hmhd2d_spc/hmhd_scripts/restart_hmhd_cluster.py {new_tmax} {rsifile}';
+            rsync -r balkovic@jed:~/remote_tmp/{root_name} .
+            echo "Done restart ({root_name})";
+        """
+
+        proc = subprocess.Popen(dedent(run_str), shell=True)
+        return proc
 
 
     def whats_the_convention_again():
