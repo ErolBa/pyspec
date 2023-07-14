@@ -341,6 +341,21 @@ def get_B(
         return Bcontrav, dBcontrav
     else:
         return Bcontrav
+    
+def get_Bcart(self,
+        lvol=0,
+        jacobian=None,
+        sarr=np.linspace(-1, 1, 10),
+        tarr=np.linspace(0, 0, 1),
+        zarr=np.linspace(0, 0, 1),
+        input1D=False):
+
+    Bcontrav = self.get_B(lvol, jacobian, sarr, tarr, zarr, input1D)
+
+    Bcontrav[...,1] /= self.input.physics.rpol*2*np.pi
+    Bcontrav[...,2] /= self.input.physics.rtor*2*np.pi
+
+    return Bcontrav
 
 def get_modB(self, Bcontrav, g, derivative=False, dBcontrav=None, dg=None):
     """Input - Bcontrav has to come from get_B function"""

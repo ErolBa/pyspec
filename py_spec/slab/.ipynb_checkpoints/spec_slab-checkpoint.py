@@ -17,8 +17,6 @@ import contextlib
 import warnings
 import sympy as sym
 from scipy.optimize import minimize_scalar
-from copy import deepcopy
-import json
 
 class SPECslab():
     """
@@ -126,6 +124,7 @@ class SPECslab():
             raise ValueError("Psi at x=0 has to be 0 !!!\n")
 
     def get_hessian(fname):
+
         if(fname[-3:] == '.sp'):
             fname = fname+".DF"
         elif(fname[-3:] == '.h5'):
@@ -149,29 +148,27 @@ class SPECslab():
             ngdof = read_int(fid)
             read_int(fid)
             read_int(fid)
-            #mode_number = int((nvol-1) * (mpol + 1))
-            H = np.fromfile(fid, 'float64').reshape((int(ngdof), int(ngdof))).T
+
+            mode_number = int((nvol-1) * (mpol + 1))
+            H = np.fromfile(fid, 'float64').reshape((mode_number, mode_number)).T
 
         return H
 
     def get_hessian_new(fname):
-
         # reads the hessian from .hessian file, apparently made prior to fourier transforms
         if(fname[-3:] == '.sp'):
-            fname = fname + ".hessian"
+            fname = fname[:-3] + ".hessian"
         elif(fname[-3:] == '.h5'):
-            fname = fname[:-3]+".hessian"
+            fname = fname[:-5]+".hessian"
         elif(fname[-4:] == '.end'):
-            fname = fname[:-4]+".hessian"
-        elif(fname[-8:] == ".hessian"):
-            fname = fname
+            fname = fname[:-7]+".hessian"
         else:
             raise ValueError("Invalid file given to get_hessian()")
 
         def read_int(fid):
             return np.fromfile(fid, 'int32',1)
 
-        with open(fname, 'rb') as fid:
+        with open('.'+fname, 'rb') as fid:
             read_int(fid)
             NGdof = int(read_int(fid))
             read_int(fid)
@@ -186,7 +183,7 @@ class SPECslab():
         """
         ARGS:
 			fname:
-				name of SPEC file
+				name of SPEC file 
             which:
                 "old" gets hessian from .###.sp.DF (not that good, has asymmetry)
                 "new" gets hessian from .###.hessian (default)
@@ -211,7 +208,6 @@ class SPECslab():
         minvec = v[:, indmin]
 
         return w, v, indmin, minvec
-
 
     def perturb_eq(fname_hdf5, psi_w):
         # takes an .end file (with the modes at the end)
@@ -261,17 +257,23 @@ class SPECslab():
         width = x_max - x_min
         return width
 
-    def get_spec_jacobian(data, lvol, sarr, theta, zeta):
+    def get_spec_jacobian(file, lvol, sarr, theta, zeta):
 
-        # geometry =  data['input']['physics']['Igeometry'][0]
-        # rpol =  data['input']['physics']['rpol'][0]
-        # rtor =  data['input']['physics']['rtor'][0]
+        if(isinstance(file, str)):
+            data = h5py.File(file, 'r')
+        elif(isinstance(file, h5py.File)):
+            data = file
+        else:
+            raise ValueError("Invalid input 'file' to get_spec_vecpot", file)
 
-        geometry =  data.input.physics.Igeometry
-        rpol =  data.input.physics.rpol
-        rtor =  data.input.physics.rtor
+        geometry =  data['input']['physics']['Igeometry'][0]
+        rpol =  data['input']['physics']['rpol'][0]
+        rtor =  data['input']['physics']['rtor'][0]
 
-        Rarr, Zarr = SPECslab.get_spec_R_derivatives(data, lvol, sarr, theta, zeta, 'R')
+        Rarr, Zarr = SPECslab.get_spec_R_derivatives(file, lvol, sarr, theta, zeta, 'R')
+
+        if(isinstance(file, str)):
+            data.close()
 
         if(geometry == 1):
             return Rarr[1] #* rtor * rpol # fixed here
@@ -282,20 +284,31 @@ class SPECslab():
         else:
             raise ValueError("Error: unsupported dimension")
 
-    def get_spec_R_derivatives(data, lvol, sarr, tarr, zarr, RorZ):
+    def get_spec_R_derivatives(file, lvol, sarr, tarr, zarr, RorZ):
         # the vol index is -1 compared to the matlab one
 
-        geometry = data.input.physics.Igeometry
-        im = data.output.im
-        _in = data.output.in_
-        mn = data.output.mn
-        mregular = data.input.numerics.Mregular
-        Rbc = data.output.Rbc
-        Rmn_p = Rbc[lvol+1,:]
+        if(isinstance(file, str)):
+            data = h5py.File(file, 'r')
+        elif(isinstance(file, h5py.File)):
+            data = file
+        else:
+            raise ValueError("Invalid input 'file' to get_spec_vecpot", file)
+
+        geometry =  data['input']['physics']['Igeometry'][0]
+        im = np.array(data['output']['im'][:])
+        _in = np.array(data['output']['in'][:])
+        mn = data['output']['mn'][0]
+        mregular = data['input']['numerics']['Mregular'][0]
+
+        Rbc = data['output']['Rbc'][:]
         Rmn = Rbc[lvol,:]
-        Zbs = data.output.Zbs
+        Rmn_p = Rbc[lvol+1,:]
+        Zbs = data['output']['Zbs'][:]
         Zmn = Zbs[lvol,:]
         Zmn_p = Zbs[lvol+1,:]
+
+        if(isinstance(file, str)):
+            data.close()
 
         ns = len(sarr)
         nt = len(tarr)
@@ -388,10 +401,10 @@ class SPECslab():
 
     def get_contra2cov(data, lvol, vec_contrav, sarr, theta, phi, norm):
 
+        ns = len(sarr)
         g = SPECslab.get_spec_metric(data, lvol, sarr, theta, phi)
 
-        # print(g.shape, vec_contrav.shape)
-        vec_cov = np.einsum('xystz,ystz->xstz', g, vec_contrav)
+        vec_cov = np.einsum('xas,as->xs', g, vec_contrav)
         return vec_cov
 
     def get_spec_regularization_factor(geometry, mn, im, lvol, sarr, mregular, ForG):
@@ -444,14 +457,11 @@ class SPECslab():
     def get_spec_metric(data, lvol, sarr, theta, zeta):
 
         ns = len(sarr)
-        nt = len(theta)
-        nz = len(zeta)
-        
         G = data.input.physics.Igeometry
         rtor = data.input.physics.rtor
         rpol = data.input.physics.rpol
 
-        gmat = np.zeros((3, 3, ns, nt, nz))
+        gmat = np.zeros((3,3,ns))
         Rarr, Zarr = SPECslab.get_spec_R_derivatives(data, lvol, sarr, theta, zeta, 'R')
 
         if(G == 1):
@@ -517,11 +527,11 @@ class SPECslab():
             return
 
         if(title is None):
-            title = f"KAM surfaces ({fname})"
+            title = fname
 
         fig, ax = plt.subplots(1,1)
         myspec = SPECout(fname)
-        surfs = myspec.plot_kam_surface(marker='', ls='-', c='b', lw=1.8, ax=ax)
+        surfs = myspec.plot_kam_surface(marker='o', s=2., ax=ax)
 
         ax.set_ylim([0-0.2,2*np.pi+0.2])
         ax.set_xlim([0-0.1,2*np.pi+0.1])
@@ -653,28 +663,13 @@ class SPECslab():
         sarr = np.linspace(-1, 1, ns)
         tarr = np.linspace(0, 2*np.pi, nt)
 
-        if(plot):
-            plt.figure()
-
-        # plot vecpot in other volumes as well
-#        if(plot):
-#            for v in np.arange(2, lvol, 1):
-#                At, Az = SPECslab.get_spec_vecpot(fname, v, sarr, tarr, np.array([0]))
-#                Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, v, sarr, tarr, np.array([0]))
-#                plt.contour(Tarr, Rarr, Az[:,:,0], levels=1, alpha=0.9, lw=1.3, colors='black', linestyles='solid')
-#
-#            for v in np.arange(lvol+1, data.input.physics.Nvol-2, 1):
-#                At, Az = SPECslab.get_spec_vecpot(fname, v, sarr, tarr, np.array([0]))
-#                Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, v, sarr, tarr, np.array([0]))
-#                plt.contour(Tarr, Rarr, Az[:,:,0], levels=[np.mean(Az)], alpha=0.9, lw=1.3, colors='black', linestyles='solid')
-#
         At, Az = SPECslab.get_spec_vecpot(fname, lvol, sarr, tarr, np.array([0]))
         Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, np.array([0]))
 
         o_point = np.unravel_index((Az[:,:,0]).argmin(), Az[:,:,0].shape)
         x_point = np.unravel_index(((Az[:,:,0])**2).argmin(), Az[:,:,0].shape)
 
-        # plt.ioff()
+        plt.ioff()
         plt.figure()
         levels = np.linspace(Az[o_point][0], Az[x_point][0], 700)[1:-1]
         c2 = plt.contour(Tarr, Rarr, Az[:,:,0], levels=levels, colors='black',linestyles='solid', alpha=0)
@@ -689,15 +684,10 @@ class SPECslab():
         cont_pts = [c2.collections[max_closed_ind].get_paths()[0].vertices]
 
         if(plot):
+            plt.figure()
             # plt.contourf(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.9)
             # plt.colorbar()
             plt.contour(Tarr, Rarr, Az[:,:,0], levels=20, alpha=1., colors='black', linestyles='solid')
-
-            # plot the res. volume bondary
-            theta_bnd = np.linspace(0, 2*np.pi, 200)
-            rarr_bnd, tarr_bnd, _ = SPECslab.get_rtarr(data, lvol, [-1,1], theta_bnd, np.array([0]))
-            for i in [0, 1]:
-                plt.plot(theta_bnd, rarr_bnd[i], color='royalblue', lw=3, zorder=20)
 
         if(len(cont_pts) < 1):
             island_w = 0.0
@@ -715,31 +705,27 @@ class SPECslab():
             # print(f"r_up,down,x -- {r_up-np.pi} {r_down-np.pi} {r_x-np.pi}")
 
             if(plot):
-                plt.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=3.5)
+                plt.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=3)
 
-                plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=2.3)
-                plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=2.3)
-                plt.axhline(r_x, color='r', linestyle='dashed', lw=2.3)
-                plt.plot(cont_pts[np.argmin(cont_pts[:,0]), 0], cont_pts[np.argmin(cont_pts[:,0]), 1],'rX', ms=11)
-                plt.plot(Tarr[o_point],Rarr[o_point],'ro', ms=10)
+                plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1.5)
+                plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1.5)
+                plt.axhline(r_x, color='r', linestyle='dashed', lw=1.5)
+                plt.plot(cont_pts[np.argmin(cont_pts[:,0]), 0], cont_pts[np.argmin(cont_pts[:,0]), 1],'rX', ms=9)
+                plt.plot(Tarr[o_point],Rarr[o_point],'ro', ms=9)
                 plt.plot(Tarr[0], Rarr[0], 'k-', lw=1)
                 plt.plot(Tarr[-1], Rarr[-1], 'k-', lw=1)
 
         if(plot):
             if(plot_title is None):
-                plot_title = f"SPEC island (width {island_w:.3f} Asym {Asym:.3f})"
-                # plot_title = f"SPEC island (width {island_w:.4f})"
-            plt.title(plot_title, fontsize=20)
+                plot_title = f"SPEC A_z resonant volume (width {island_w:.4f} Asym {Asym:.4f})"
+            plt.title(plot_title)
             # plt.gcf().ca
             plt.gcf().canvas.manager.set_window_title(plot_title + f" w={island_w:.3f}")
             plt.ylim(ylims)
             plt.xlim(xlims)
-            plt.xlabel("$\\theta$", fontsize=16)
-            plt.ylabel("R", fontsize=16)
             plt.tight_layout()
 
-
-        print(f"{fname}:  island width {island_w:.8f}  asym {Asym:.8f}")
+        print(f"SPEC Island width {island_w:.8f}")
 
         return island_w, Asym
 
@@ -939,9 +925,12 @@ class SPECslab():
 
         nvol = data.output.Mvol
         G = data.input.physics.Igeometry
-        mpol = data.input.physics.Mpol
+        mn = data.output.mn
+        Rmn = data.output.Rbc
         im = data.output.im
-        _in = data.output.in_
+        iN = data.output.in_
+        rtor = data.input.physics.rtor
+        rpol = data.input.physics.rpol
 
         iimin = 0
         iimax = 1
@@ -949,8 +938,6 @@ class SPECslab():
         r0, z0 = SPECslab.get_spec_radius(data, theta, zeta, -1)
         B = np.zeros((3, len(r)))
         for i in range(nvol):
-
-            lrad = data.input.physics.Lrad[i]
 
             ri, zi = SPECslab.get_spec_radius(data, theta, zeta, i-1)
             rmin = np.sqrt((ri-r0)**2 + zi**2)
@@ -963,28 +950,17 @@ class SPECslab():
             if(i == 0 and G != 1):
                 sarr = 2 * ((r_vol - rmin) / (rmax - rmin))**2 - 1
 
-            jac = SPECslab.get_spec_jacobian(data, i, sarr, theta, zeta)
-            g = SPECslab.get_spec_metric(data, i, sarr, theta, zeta)
-
-            Lsingularity = (i == 0) and (G != 1)
-
-            T = SPECslab.get_spec_poly_basis(Lsingularity, mpol, lrad, sarr)
-
-            Ate = np.array(data.vector_potential.Ate)[i]
-            Aze = np.array(data.vector_potential.Aze)[i]
-            Ato = np.array(data.vector_potential.Ato)[i]
-            Azo = np.array(data.vector_potential.Azo)[i]
-            
-            B_contrav = vecpot_to_contrav(T, Ate, Aze, Ato, Azo, jac, im, _in, theta, zeta)
+            B_contrav = SPECslab.get_spec_magfield(data, i, sarr, theta, zeta)
 
             iimax = iimax + len(r_vol)
 
-            # B_cov = SPECslab.get_contra2cov(data, i, B_contrav, sarr, theta, zeta, 1)
+            B_cov = SPECslab.get_contra2cov(data, i, B_contrav, sarr, theta, zeta, 1)
 
-            B_cart = np.zeros_like(B_contrav)
-            B_cart[0] = B_contrav[0] / g[0,0,0,0]**0.5
-            B_cart[1] = B_contrav[1] / g[1,1,0,0]**0.5#/ (np.sqrt(g[1,1]) )#/ jac[:])
-            B_cart[2] = B_contrav[2] / g[2,2,0,0]**0.5 #/ (np.sqrt(g[2,2]) )#/ jac[:])
+            B_cart = np.zeros_like(B_cov)
+            B_cart[0] = B_cov[0]
+            B_cart[1] = B_cov[1] / rpol
+            B_cart[2] = B_cov[2] / rtor
+
 
             if(const_factor is not None):
                 B_cart *= const_factor[i] # multiply by mu to get current, or else
@@ -994,11 +970,9 @@ class SPECslab():
             r_int = r[ind]
 
             for comp in range(3):
-                f = interpolate.interp1d(r_vol, B_cart[comp,:,0,0], kind='cubic')
+                f = interpolate.interp1d(r_vol, B_cart[comp,:], kind='cubic')
                 B[comp, ind] = f(r_int)
-        
         return B
-
 
     def get_spec_vecpot(file, lvol, sarr=None, tarr=None, zarr=None):
 
@@ -1065,10 +1039,95 @@ class SPECslab():
 
         return At, Az
 
-    def run_spec_master(fname, num_cpus=8, show_output=False, print_force=True, log_file=None):
 
-        if(print_force):
-            print(f"\n{('-'*80)}\nRunning SPEC newton with {fname}")
+    def get_spec_magfield(file, lvol, sarr, tarr, zarr):
+
+        tarr = np.array(tarr)
+        zarr = np.array(zarr)
+
+        if(isinstance(file, str)):
+            data = h5py.File(file, 'r')
+        elif(isinstance(file, h5py.File)):
+            data = file
+        else:
+            raise ValueError("Invalid input 'file' to get_spec_vecpot", file)
+
+        jac = SPECslab.get_spec_jacobian(file, lvol, sarr, tarr, zarr)
+        # print(jac)
+
+        lrad = data['input']['physics']['Lrad'][lvol]
+        nvol = data['input']['physics']['Nvol'][0]
+        geometry =  data['input']['physics']['Igeometry'][0]
+        mpol =  data['input']['physics']['Mpol'][0]
+        im = np.array(data['output']['im'][:])
+        _in = np.array(data['output']['in'][:])
+        mn = data['output']['mn'][0]
+        mregular = data['input']['numerics']['Mregular'][0]
+
+        lim1 = lvol * (lrad+1)
+        lim2 = (lvol+1) * (lrad+1)
+        Ate = data['vector_potential']['Ate'][:, lim1:lim2]
+        Aze = data['vector_potential']['Aze'][:, lim1:lim2]
+        Ato = data['vector_potential']['Ato'][:, lim1:lim2]
+        Azo = data['vector_potential']['Azo'][:, lim1:lim2]
+
+        if(isinstance(file, str)):
+            data.close()
+
+        ns = len(sarr)
+        nz = len(zarr)
+
+        Lsingularity = (lvol == 0) and (geometry != 1)
+
+        T = SPECslab.get_spec_poly_basis(Lsingularity, mpol, lrad, sarr)
+
+        cosa = np.cos(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
+        sina = np.sin(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
+
+        if(Lsingularity):
+            Bs = np.zeros((ns, nt, nz))
+            Bt = np.zeros((ns, nt, nz))
+            Bz = np.zeros((ns, nt, nz))
+
+            for j in range(mn):
+                basis = T[:,0,im[j]+1]
+                dbasis = T[:,1,im[j]+1]
+
+                Bs_term = (im[:,None]*Azo[:,:] + _in[:,None]*Ato[:,:])[:,:,None,None] * cosa[:,None,:,:] - (im[:,None]*Aze[:,:] + _in[:,None]*Ate[:,:])[:,:,None,None] * sina[:,None,:,:]
+                Bs += np.einsum('s,jltz->stz', basis, Bs_term, optimize=True)
+                Bt += np.einsum('s,jltz->stz', -dbasis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
+                Bz += np.einsum('s,jltz->stz', dbasis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
+        else:
+            basis = T[:,0,:]
+            dbasis = T[:,1,:]
+            Bs_term = (im[:,None]*Azo[:,:] + _in[:,None]*Ato[:,:])[:,:,None,None] * cosa[:,None,:,:] - (im[:,None]*Aze[:,:] + _in[:,None]*Ate[:,:])[:,:,None,None] * sina[:,None,:,:]
+            Bs = np.einsum('ls,jltz->stz', basis, Bs_term, optimize=True)
+            Bt = np.einsum('ls,jltz->stz', -dbasis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
+            Bz = np.einsum('ls,jltz->stz', dbasis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
+
+        # for l in range(Lrad+1):
+        #     for j in range(mn):
+        #         if(Lsingularity):
+        #             basis = np.swapaxes(T[l,0,im[j]+1,:],0,1)
+        #             dbasis = np.swapaxes(T[l,1,im[j]+1,:],0,1)
+        #         else:
+        #             basis = T[l,0]
+        #             dbasis = T[l,1]
+        #
+        #         cosa = np.cos(im[j]*theta - iN[j]*zeta)
+        #         sina = np.sin(im[j]*theta - iN[j]*zeta)
+        #         Bs[:] += basis * ((im[j]*Azo[l,j] + iN[j]*Ato[l,j]) * cosa - (im[j]*Aze[l,j] + iN[j]*Ate[l,j]) * sina)
+        #         Bt[:] -= dbasis * (Aze[l,j]*cosa + Azo[l,j]*sina)
+        #         Bz[:] += dbasis * (Ate[l,j]*cosa + Ato[l,j]*sina) # fixed it here
+
+        Bcontrav = np.array([Bs, Bt, Bz]) / jac[None,:,:,:]
+
+
+        return Bcontrav
+
+    def run_spec_master(fname, num_cpus=8, show_output=False, log_file=None):
+
+        print(f"\n{('-'*80)}\nRunning SPEC newton with {fname}")
 
         try:
             if(show_output):
@@ -1076,13 +1135,13 @@ class SPECslab():
                     subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True)
                 else:
                     with open(log_file, "a") as f:
-                        subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True, stdout=f, stderr=f)
+                        subprocess.run(f'mpirun -n {num_cpus} ~/spec_descent/SPEC/xspec {fname}', shell=True, stdout=f, stderr=f)
             else:
                 subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            if(print_force):
-                data = SPECout(fname+".h5")
-                print(f"SPEC completed  ---  |f| = {data.output.ForceErr:.5e}")
+
+            data = SPECout(fname+".h5")
+            print(f"SPEC completed  ---  |f| = {data.output.ForceErr:.5e}")
 
             return True
 
@@ -1143,7 +1202,7 @@ class SPECslab():
 
         return fig
 
-    def check_profile_Bfield(fname, func_by0=None, func_bz0=None):
+    def check_profile_Bfield(fname, func_by0, func_bz0):
 
         fig, ax = plt.subplots(1, 1)
         plt.title('Plot of magnetic field B')
@@ -1151,23 +1210,20 @@ class SPECslab():
 
         data = SPECout(fname)
 
-        theta = np.array([np.pi])
-        phi = np.array([0])
+        theta = np.pi
+        phi = 0
         num_radpts = 300
         num_radpts_pervol = 10
         r = np.linspace(0, 2*np.pi, num_radpts, endpoint=True)
 
         B = SPECslab.get_full_field(data, r, theta, phi, num_radpts_pervol)
 
-        ax.plot(r, B[0,:], '.-', picker=SPECslab.line_picker, label='spec B_psi')
-        ax.plot(r, B[1,:], '.-', picker=SPECslab.line_picker, label='spec B_theta')
-        ax.plot(r, B[2,:], '.-', picker=SPECslab.line_picker, label='spec B_ phi')
+        ax.plot(r, B[0], '.-', picker=SPECslab.line_picker, label='spec B_psi')
+        ax.plot(r, B[1], '.-', picker=SPECslab.line_picker, label='spec B_theta')
+        ax.plot(r, B[2], '.-', picker=SPECslab.line_picker, label='spec B_ phi')
 
-        if(func_by0 is not None):
-            ax.plot(r, func_by0(r - np.pi), '--', picker=SPECslab.line_picker, label='B_y0')
-
-        if(func_bz0 is not None):
-            ax.plot(r, func_bz0(r-np.pi), '--', picker=SPECslab.line_picker, label='B_z0')
+        ax.plot(r, func_by0(r - np.pi), '--', picker=SPECslab.line_picker, label='B_y0')
+        ax.plot(r, func_bz0(r-np.pi), '--', picker=SPECslab.line_picker, label='B_z0')
 
         ax.legend()
         ax.set_xlabel("Radial coordinate r / x [m]")
@@ -1184,8 +1240,8 @@ class SPECslab():
 
         data = SPECout(fname)
 
-        theta = [np.pi]
-        phi = [0]
+        theta = np.pi
+        phi = 0
         num_radpts = 1000
         num_radpts_pervol = 20
         r = np.linspace(0, 2*np.pi, num_radpts, endpoint=True)
@@ -1482,7 +1538,7 @@ class SPECslab():
 
         inputnml.write_simple(inpdict.fname_input)
 
-        SPECslab.run_spec_master(inpdict.fname_input, show_output=show_output, print_force=False)
+        SPECslab.run_spec_master(inpdict.fname_input, show_output=show_output)
 
 
     def run_spec_asymm_slab(inpdict, show_output=False):
@@ -1641,8 +1697,7 @@ class SPECslab():
                 pdf.savefig(f)
 
     def check_intersect(fname):
-        data = SPECout(fname)
-        x = SPECslab.get_infaces_pts(data)
+        x = SPECslab.get_infaces_pts(fname)
         insect_flag = check_intersect_helper(x, x.shape[0])
         return insect_flag
 
@@ -1664,21 +1719,9 @@ class SPECslab():
 
         insect_flag = check_intersect_helper(x, x.shape[0])
         return insect_flag
-    
-    def get_infaces_initial(inputnml):
-        infaces_fourier = inputnml.interface_guess
-        thetas = np.linspace(0, 2*np.pi, 200)
-        x = np.zeros((inputnml['physicslist']['Nvol'], len(thetas)))
 
-        for i in range(inputnml['physicslist']['Mpol']+1):
-            # print(np.array(infaces_fourier[(i,0)]['Rbc']))
-            x += np.cos(i*thetas)[None,:] * (np.array(infaces_fourier[(i,0)]['Rbc']))[:,None]
-
-        x = np.vstack([np.zeros_like(thetas), x])
-
-        return x
-
-    def get_infaces_pts(data):
+    def get_infaces_pts(fname):
+        data = SPECout(fname)
         thetas = np.linspace(0, 2*np.pi, 200)
         x_four = data.output.Rbc[:,:]
         x = np.zeros((x_four.shape[0], len(thetas)))
@@ -1742,7 +1785,7 @@ class SPECslab():
 
         SPECslab.run_spec_slab(inpdict, show_output)
 
-        # print(f"Del\' * a {SPECslab.calc_delprime(1/inpdict.rslab)*a:.3f} rslab {inpdict.rslab:.3f} psi_w {inpdict.psi_w:.3f}\n")
+        print(f"Del\' * a {SPECslab.calc_delprime(1/inpdict.rslab)*a:.3f} rslab {inpdict.rslab:.3f} psi_w {inpdict.psi_w:.3f}\n")
 
         try:
             SPECslab.get_spec_energy(inpdict.fname_outh5)
@@ -1750,28 +1793,23 @@ class SPECslab():
             pass
         # SPECslab.plot_kamsurf(inpdict.fname_outh5, f"init kam surfaces psi_w={inpdict.psi_w:.3f}")
 
-    def add_perturbation(input_fname, ouput_fname, kick_amplitude=0.8, max_num_iters=200, perturbation=None):
+    def add_perturbation(input_fname, ouput_fname, kick_amplitude=0.8, max_num_iters=200):
 
         # subprocess.run(f"cp {input_fname} {ouput_fname}", shell=True)
         inputnml = SPECNamelist(ouput_fname)
 
         eigval, eigvec, min_eigval_ind, min_eigvec = SPECslab.get_eigenstuff(input_fname)
         if(eigval[min_eigval_ind] > 0.0):
-            print("Smallest eigenvalue of the force-gradient matrix is positive!")
-            # return False
+            print("Smallest eigenvalue of the force-gradient matrix is positive, system is stable!")
+            return False
 
-        if(perturbation is None):
-            perturbation = np.real(min_eigvec[1::inputnml._Mpol+1])
-            perturbation /= np.max(np.abs(perturbation))
-            perturbation *= -1*np.sign(perturbation[len(perturbation)//2])
-            perturbation *= kick_amplitude
+        perturbation = np.real(min_eigvec[1::inputnml._Mpol+1])
+        perturbation /= np.max(np.abs(perturbation))
+        perturbation *= np.sign(perturbation[1*len(perturbation)//4])
+        perturbation *= kick_amplitude
 
-            # plt.plot(perturbation)
-            # plt.ylabel("eigenmode")
-            # print("eigenmode\n", ''.join([str(p)+',' for p in perturbation]))
+        print("Finding good pertubation amplitude... ",end='')
 
-
-        # print("Finding good pertubation amplitude... ",end='')
         for n in range(max_num_iters):
             # print(n, end=' ')
             for i in range(inputnml._Nvol-1):
@@ -1785,12 +1823,12 @@ class SPECslab():
                 perturbation *= 0.98
             else:
                 break
-        print("Eigenmode found ", n)
-
+        print(n)
 
         inputnml.write_simple(ouput_fname)
+        SPECslab.check_intersect_initial(inputnml, False)
 
-        return perturbation
+        return True
 
     def print_tree_h5(fname):
         with h5py.File(fname,'r') as hf:
@@ -1911,7 +1949,7 @@ class SPECslab():
 
         SPECslab.run_spec_slab(inpdict, show_output)
 
-    def find_max_psiw_symm(delprimeas, psiw_lims, constraint=2, print_debug=False):
+    def find_max_psiw_symm(delprimeas, psiw_lims, constraint=2):
         # finds max psiw for each delprimea
 
         if(isinstance(delprimeas, float)):
@@ -1950,8 +1988,7 @@ class SPECslab():
             min_eigval = eigval[min_eigval_ind]
             inpdict.lamba_val = min_eigval
 
-            if(print_debug):
-                print(f"psiw {psiw:.4f} min_eigval {min_eigval:.5e}")
+            print(f"psiw {psiw:.4f} min_eigval {min_eigval:.5e}")
             # return -psiw if min_eigval < 0 else 1.0
             return -psiw if min_eigval < 0 else psiw
 
@@ -1970,36 +2007,13 @@ class SPECslab():
 
         return np.array(best_psiws) if len(best_psiws) > 1 else best_psiws[0]
 
-    @contextlib.contextmanager
-    def change_dir(path):
-        old_path = os.getcwd()
-        os.chdir(path)
-        try:
-            yield
-        finally:
-            os.chdir(old_path)
 
 class input_dict(dict):
     """input dictionary class
         -> with dot.notation access to dictionary attributes"""
-
     __getattr__ = dict.get
     __setattr__ = dict.__setitem__
     __delattr__ = dict.__delitem__
-
-    def __new__(cls, *args, **kwargs):
-        obj = dict().__new__(cls)
-        return obj
-
-    def __init__(self, fname=None):
-        if(fname is not None):       
-            with open(fname, 'r') as f:
-                d = json.load(f) 
-            self.update(d)
-    
-            for k in self.keys():
-                if(isinstance(self[k], list)):
-                    self[k] = np.array(self[k])
 
     def set_if_none(self, key, val):
         if(key not in self.keys()):
@@ -2010,21 +2024,6 @@ class input_dict(dict):
                 return True
             else:
                 return False
-
-    def copy(self, memo=None):
-        return input_dict(deepcopy(dict(self), memo=memo))
-
-    def save_json(self, fname):
-        def default(obj):
-            if isinstance(obj, np.ndarray):
-                return obj.tolist()
-            else:
-                return None
-            raise TypeError(f'Not serializable {obj}')
-
-        with open(fname, 'w') as f:
-            json.dump(self, f, default=default, indent=4, sort_keys=True)
-
 
 @numba.njit(cache=True)
 def check_intersect_helper(x, nvol):
@@ -2062,83 +2061,6 @@ def flatten_hdf5_file(name, node, file_dict):
         file_dict[fullname] = node[:]
     else:
         pass
-
-
-def vecpot_to_contrav(T, Ate, Aze, Ato, Azo, jac, im, _in, tarr, zarr):
-
-        basis = T[:,0,:]
-        dbasis = T[:,1,:]
-
-        mn = Azo.shape[0]
-        lrad = Azo.shape[1] # actually is lrad+1
-        nt = tarr.shape[0]
-        nz = zarr.shape[0]
-        nr = basis.shape[1]
-
-        # cosa = np.cos(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:])
-        # sina = np.sin(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
-
-        # if(Lsingularity):
-        #     Bs = np.zeros((ns, nt, nz))
-        #     Bt = np.zeros((ns, nt, nz))
-        #     Bz = np.zeros((ns, nt, nz))
-
-        #     for j in range(mn):
-        #         basis = T[:,0,im[j]+1]
-        #         dbasis = T[:,1,im[j]+1]
-
-        #         Bs_term = (im[:,None]*Azo[:,:] + _in[:,None]*Ato[:,:])[:,:,None,None] * cosa[:,None,:,:] - (im[:,None]*Aze[:,:] + _in[:,None]*Ate[:,:])[:,:,None,None] * sina[:,None,:,:]
-        #         Bs += np.einsum('s,jltz->stz', basis, Bs_term, optimize=True)
-        #         Bt += np.einsum('s,jltz->stz', -dbasis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
-        #         Bz += np.einsum('s,jltz->stz', dbasis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
-        # else:
-            # basis = T[:,0,:]
-            # dbasis = T[:,1,:]
-            # Bs_term = (im[:,None]*Azo[:,:] + _in[:,None]*Ato[:,:])[:,:,None,None] * cosa[:,None,:,:] - (im[:,None]*Aze[:,:] + _in[:,None]*Ate[:,:])[:,:,None,None] * sina[:,None,:,:]
-            
-            # print("shapes", basis.shape, Bs_term.shape)
-            # print(Azo.shape, Ate.shape)
-
-            # Bs = np.einsum('ls,jtzl->stz', basis, Bs_term, optimize=True)
-            # Bt = np.einsum('ls,jltz->stz', -dbasis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
-            # Bz = np.einsum('ls,jltz->stz', dbasis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
-        
-
-        # should use np.zeros, not np.empty
-        Bs = np.zeros((nr, nt, nz))
-        Bt = np.zeros_like(Bs)
-        Bz = np.zeros_like(Bs)
-
-        # print(Aze.shape, dbasis.shape)
-
-        for j in range(mn):
-            for t in range(nt):
-                for z in range(nz):
-                    alpha = im[j]*tarr[t] - _in[j]*zarr[z]
-                    cosa = np.cos(alpha)
-                    sina = np.sin(alpha)
-                        
-                    for l in range(lrad):
-                        Bs_term = (im[j]*Azo[j,l] + _in[j]*Ato[j,l]) * cosa - (im[j]*Aze[j,l] + _in[j]*Ate[j,l]) * sina
-                        
-                        for s in range(nr):
-                            Bs[s, t, z] += (basis[l,s] * Bs_term) / jac[s,t,z]
-                            Bt[s, t, z] += (-dbasis[l,s] * (Aze[j,l]*cosa + Azo[j,l]*sina)) / jac[s,t,z]
-                            Bz[s, t, z] += (dbasis[l,s] * (Ate[j,l]*cosa + Ato[j,l]*sina)) / jac[s,t,z]
-
-        # Bs_term = (im[:,None]*Azo[:,:] + _in[:,None]*Ato[:,:])[:,:,None,None] * cosa[:,None,:,:] - (im[:,None]*Aze[:,:] + _in[:,None]*Ate[:,:])[:,:,None,None] * sina[:,None,:,:]
-        
-        # print("shapes", basis.shape, Bs_term.shape)
-        # print(Azo.shape, Ate.shape)
-
-        # Bs = np.einsum('ls,jtzl->stz', basis, Bs_term, optimize=True)
-        # Bt = np.einsum('ls,jltz->stz', -dbasis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
-        # Bz = np.einsum('ls,jltz->stz', dbasis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
-        
-        # print('bt', Bz[:,0,0])
-
-        return np.array([Bs, Bt, Bz])
-
 
 if __name__ == "__main__":
 

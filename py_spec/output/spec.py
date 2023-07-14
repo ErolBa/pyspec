@@ -35,12 +35,12 @@ class SPECout:
         jacobian,
         metric,
         get_B,
+        get_Bcart,
         get_modB,
         get_B_covariant,
         test_derivatives
     )
-    from ._plot_modB import plot_modB
-    from ._plot_modB import plot_fmn
+    from ._plot_modB import plot_modB, plot_fmn
     from ._plot_iota import plot_iota
 
     def __init__(self, *args, **kwargs):

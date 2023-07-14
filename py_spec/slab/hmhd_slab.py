@@ -317,7 +317,7 @@ class HMHDslab():
         psii_string = str((symm_config['psi_sym'])).replace("exp", "???").replace("psi0","a").replace("x","z(k)").replace("/","\/").replace("???", "exp")
         byi_string = str((symm_config['bz_sym'])).replace("exp", "???").replace("psi0","a").replace("Bz0","qpa").replace("x","z(k)").replace("/","\/").replace("???", "exp")
         byi_string = byi_string[:-1] + " - 4.0 * prei(i,k) )" # make sure initially there is force balance, even with finite, non-const pressure
-
+        print(byi_string)
         HMHDslab.run_sed_safe(f".*psii(i,k)=1.00.*/\tpsii(i,k)=1.00*{psii_string}", hmhd_root_loc+"/prob.f")
         HMHDslab.run_sed_safe(f".*byi(i,k)=1.00.*/\tbyi(i,k)=1.00*{byi_string}", hmhd_root_loc+"/prob.f")
 
@@ -632,7 +632,7 @@ class HMHDslab():
 
         fig = plt.figure(figsize=(9,8))
 
-        callback = Index(root_fname, fields, fig)
+        callback = plot3d(root_fname, fields, fig)
 
         axprev = fig.add_axes([0.58, y_pos, 0.18, y_height])
         axnext = fig.add_axes([0.78, y_pos, 0.18, y_height])
@@ -665,6 +665,73 @@ class HMHDslab():
         fig.canvas.mpl_connect('key_press_event', on_press)
 
         plt.tight_layout()
+        plt.show()
+
+    def plot_scalar_2d(args):
+
+        from matplotlib.widgets import Button, Slider
+
+        matplotlib.rcParams['keymap.back'].remove('left')
+        matplotlib.rcParams['keymap.forward'].remove('right')
+
+        print("Use arrow keys to navigate...\ntop/down - change field\nleft/right - change frame")
+
+        if(len(args)<2):
+            raise ValueError("Invalid input...")
+
+        root_fname = args[1] + '/data'
+        fields = ['bx', 'by', 'bz', 'den', 'ex', 'ey', 'ez', 'jx', 'jy', 'jz', 'pre', 'psi', 'vx', 'vy', 'vz']
+
+        y_pos = 0.02
+        y_height = 0.06
+        x_width = 0.11
+        fig = plt.figure(figsize=(9,8))
+
+        callback = plot2d(root_fname, fields, fig)
+
+        axprev = fig.add_axes([1.0-0.02-2*x_width-0.01, y_pos, x_width, y_height])
+        axnext = fig.add_axes([1.0-0.02-x_width, y_pos, x_width, y_height])
+        bnext = Button(axnext, 'Next frame')
+        bnext.on_clicked(callback.next)
+        bprev = Button(axprev, 'Prev frame')
+        bprev.on_clicked(callback.prev)
+
+        axprev2 = fig.add_axes([0.02, y_pos, x_width, y_height])
+        axnext2 = fig.add_axes([x_width+0.02+0.01, y_pos, x_width, y_height])
+        bnext2 = Button(axnext2, 'Next field')
+        bnext2.on_clicked(callback.next_field)
+        bprev2 = Button(axprev2, 'Prev field')
+        bprev2.on_clicked(callback.prev_field)
+
+        def on_press(event):
+            sys.stdout.flush()
+            if event.key == 'left':
+                callback.prev(None)
+                fig.canvas.draw()
+            elif event.key == 'right':
+                callback.next(None)
+                fig.canvas.draw()
+            elif event.key == 'up':
+                callback.next_field(None)
+                fig.canvas.draw()
+            elif event.key == 'down':
+                callback.prev_field(None)
+                fig.canvas.draw()
+        fig.canvas.mpl_connect('key_press_event', on_press)
+
+        ax_freq = fig.add_axes([2*x_width+0.02+0.01+0.03, y_pos+y_height/4, (1.0-0.02-2*x_width-0.01-0.03)-(2*x_width+0.02+0.01+0.03), 0.03])
+
+        allowed_amplitudes = np.linspace(0, callback.num_frames)
+        callback.slider = Slider(ax_freq, "", 0, callback.num_frames-1, valinit=0, initcolor='none', valfmt='%0.0f')
+
+        def update(val):
+            callback.setframe(val)
+            fig.canvas.draw()
+        callback.slider.on_changed(update)
+
+
+        plt.tight_layout()
+        plt.subplots_adjust(bottom=0.145)
         plt.show()
 
 
@@ -1100,7 +1167,7 @@ class HMHDslab():
         num_frames = len(fnames_h5files) if num_frames is None else num_frames
 
         def get_individ_run(fname):
-            return np.asarray(HMHDslab.get_width_As_HMHD(fname, nx=400, nz=400, ncont=250, plot=False))
+            return np.asarray(HMHDslab.get_width_As_HMHD(fname, nx=250, nz=250, ncont=2000, plot=False))
 
         # find withds for each frame in parallel (multiple processes)
         results = np.array(
@@ -1121,6 +1188,7 @@ class HMHDslab():
         plt.plot(times, widths, 'd--')
         plt.xlabel("Alfven time")
         plt.ylabel("Island width")
+        plt.ylim([0, plt.ylim()[1]])
         return np.array(widths), np.array(A_s)
 
     def plot_w_As_vs_time(root_fname):
@@ -1341,28 +1409,27 @@ class HMHDslab():
 
         return beta, frac_jbs
 
-    def run_hmhd_cluster(inputs):
+    def run_hmhd_cluster(inputs, overwrite=False):
 
         json_fname = f'inputs_{inputs.root_fname}.json'
         with open(json_fname, 'w') as fp:
             json.dump(inputs, fp, indent=4)
 
+        o1 = f"rm -r {inputs.root_fname};"
+        o2 = f"echo 'Error: {inputs.root_fname} exists !!';exit 1;"
+
         run_str = f"""
             ssh balkovic@jed '
-            cd ~/remote_tmp;
-            rm -r {inputs.root_fname};
-            mkdir {inputs.root_fname};
-            cd {inputs.root_fname};
-            cat - > {json_fname};
-            ~/codes/hmhd2d_spc/hmhd_scripts/run_hmhd_cluster.py {json_fname}
-            ' < {json_fname};
-            rm -r {inputs.root_fname};
-            scp -r balkovic@jed:~/remote_tmp/{inputs.root_fname} .
+                cd ~/remote_tmp;
+                if [ -d {inputs.root_fname} ]; then {o1 if overwrite else o2} fi
+                mkdir {inputs.root_fname};
+                cd {inputs.root_fname};
+                cat - > {json_fname};
+                ~/codes/hmhd2d_spc/hmhd_scripts/run_hmhd_cluster.py {json_fname}' < {json_fname};
+            rsync -r --exclude 'rsTearing*' balkovic@jed:~/remote_tmp/{inputs.root_fname} .;
             echo "Done ({inputs.root_fname})";
             mv {json_fname} {inputs.root_fname}
         """
-
-        # subprocess.Popen(dedent(run_str), shell=True)
 
         proc = subprocess.Popen(dedent(run_str), shell=True)
         return proc
@@ -1374,7 +1441,7 @@ class HMHDslab():
             cd ~/remote_tmp;
             cd {root_name};
             ~/codes/hmhd2d_spc/hmhd_scripts/restart_hmhd_cluster.py {new_tmax} {rsifile}';
-            rsync -r balkovic@jed:~/remote_tmp/{root_name} .
+            rsync -r --exclude 'rsTearing*' balkovic@jed:~/remote_tmp/{root_name} .;
             echo "Done restart ({root_name})";
         """
 
@@ -1457,7 +1524,7 @@ class interp2d(object):
         return _out
 
 
-class Index:
+class plot3d:
     def __init__(self, root_fname, fields, fig):
         self.ind = 0
         self.field_ind = 11
@@ -1542,6 +1609,84 @@ class Index:
         self.field_ind -= 1
         self.field_ind %= self.num_fields
         self.plot_frame()
+
+class plot2d:
+    def __init__(self, root_fname, fields, fig):
+        self.ind = 0
+        self.field_ind = 11
+        self.num_frames = len(glob.glob(root_fname+"*.hdf"))
+        self.num_fields = len(fields)
+        self.root_fname = root_fname
+        self.fields = fields
+
+        with h5py.File(self.root_fname+'0001.hdf') as file:
+            f = file[self.fields[self.field_ind]][2:-2,2:-2]
+            x = file["x"][2:-2]
+            y = file["z"][2:-2]
+
+        ax =fig.add_subplot()
+        self.ax = ax
+
+        surf = ax.contourf(x, y, f, alpha=1.0, cmap='plasma', levels=80)
+
+        self.cbar = plt.colorbar(surf,  pad=0.03, aspect=30, ax=ax)
+        self.cbar.formatter.set_powerlimits((0, 0))
+        ax.set_xlabel("Theta")
+        ax.set_ylabel("Radial")
+        ax.set_title(f"Plotting {self.fields[self.field_ind]} for {self.root_fname+f'{self.ind:04}.hdf'}")
+
+        ax.set_xlim(np.min(x), np.max(x))
+        ax.set_ylim(np.min(y), np.max(y))
+
+
+    def plot_frame(self):
+        ax = self.ax
+        curr_lims = ax.get_xlim(), ax.get_ylim()
+        fname = self.root_fname+f'{self.ind+1:04}.hdf'
+
+        with h5py.File(fname) as file:
+            f = file[self.fields[self.field_ind]][2:-2,2:-2]
+            x = file["x"][2:-2]
+            y = file["z"][2:-2]
+
+        ax.cla()
+        surf = ax.contourf(x, y, f, alpha=1.0, cmap='plasma', levels=80)
+        self.cbar.remove()
+        self.cbar = plt.colorbar(surf,  pad=0.03, aspect=30, ax=ax)
+        self.cbar.formatter.set_powerlimits((0, 0))
+        ax.set_xlim(curr_lims[0])
+        ax.set_ylim(curr_lims[1])
+        ax.set_title(f"Plotting {self.fields[self.field_ind]} for {fname}")
+        ax.set_xlabel("Theta")
+        ax.set_ylabel("Radial")
+        plt.draw()
+
+    def next(self, event):
+        self.ind += 1
+        self.ind %= self.num_frames
+        self.slider.set_val(self.ind)
+        self.plot_frame()
+
+    def prev(self, event):
+        self.ind -= 1
+        self.ind %= self.num_frames
+        self.slider.set_val(self.ind)
+        self.plot_frame()
+
+    def setframe(self, frame):
+        self.ind = int(frame)
+        self.plot_frame()
+
+    def next_field(self, event):
+        self.field_ind += 1
+        self.field_ind %= self.num_fields
+        self.plot_frame()
+
+    def prev_field(self, event):
+        self.field_ind -= 1
+        self.field_ind %= self.num_fields
+        self.plot_frame()
+
 
 @numba.njit(parallel=True, fastmath=True, cache=True, error_model='numpy')
 def splev2(tx, nx, ty, ny, c, k, x, y, m, z, dx, dy, nnx, nny):

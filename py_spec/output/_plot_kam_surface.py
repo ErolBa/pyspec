@@ -205,6 +205,6 @@ def plot_kam_surface(self, ns=[], ntheta=1000, zeta=0.0, ax=None, **kwargs):
             # plot axis as a curve
             _theta = np.arange(0, 2 * np.pi + 2 * np.pi / ntheta, 2 * np.pi / ntheta)
             _r, _z = _surf.rz(_theta, np.ones_like(_theta) * zeta)
-            plt.scatter(_theta, _r, **kwargs)
+            plt.plot(_theta, _r, **kwargs)
         #     surfs.append(_surf)
         # return surfs
