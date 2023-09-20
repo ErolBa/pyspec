@@ -122,8 +122,8 @@ class FourSurf(object):
         else:
             fig, ax = plt.subplots()
         # set default plotting parameters
-        if kwargs.get("linewidth") == None:
-            kwargs.update({"linewidth": 2.0})  # prefer thicker lines
+        # if kwargs.get("linewidth") == None:
+        #     kwargs.update({"linewidth": 2.0})  # prefer thicker lines
         if kwargs.get("label") == None:
             kwargs.update({"label": "toroidal surface"})  # default label
         # get (r,z) data
@@ -179,7 +179,7 @@ def plot_kam_surface(self, ns=[], ntheta=1000, zeta=0.0, ax=None, **kwargs):
             if i == 0:
                 # plot axis as a curve
                 _r, _z = _surf.rz(0.0, zeta)
-                plt.scatter(_r, _z, **kwargs)
+                plt.plot(_r, _z, **kwargs)
             else:
                 _surf.plot(zeta=zeta, **kwargs)
             # surfs.append(_surf)
@@ -195,7 +195,7 @@ def plot_kam_surface(self, ns=[], ntheta=1000, zeta=0.0, ax=None, **kwargs):
                     0, 2 * np.pi + 2 * np.pi / ntheta, 2 * np.pi / ntheta
                 )
                 _r, _z = _surf.rz(_theta, np.ones_like(_theta) * zeta)
-                plt.scatter(_r * np.cos(_theta), _r * np.sin(_theta), **kwargs)
+                plt.plot(_r * np.cos(_theta), _r * np.sin(_theta), **kwargs)
             # surfs.append(_surf)
         #plt.axis("equal")
         return surfs

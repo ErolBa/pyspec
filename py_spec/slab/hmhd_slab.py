@@ -4,7 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import h5py
 from py_spec import SPECNamelist
-from . import SPECslab
+from . import SPECslab, input_dict
 from scipy import integrate, interpolate, optimize
 import subprocess
 import sys
@@ -224,9 +224,9 @@ class HMHDslab():
         bz_sym = sym.sqrt(bz0_sym**2 - by_sym**2)
         jy_sym = sym.diff(bz_sym, x)
 
-        psi_sym = sym.Add(psi_sym, -psi_sym.evalf(6, subs={x: -np.pi}))
+        psi_sym = sym.Add(psi_sym, -psi_sym.evalf(10, subs={x: -np.pi}))
 
-        output_dict = {}
+        output_dict = input_dict()
         output_dict["psi"] = sym.lambdify([x,psi0_sym], psi_sym)
         output_dict["by"] = sym.lambdify([x,psi0_sym], by_sym)
         output_dict["jz"] = sym.lambdify([x,psi0_sym], jz_sym)
@@ -247,13 +247,13 @@ class HMHDslab():
         by_sym = sym.sympify(by_string)
 
         psi_sym = sym.integrate(by_sym, x)
-        psi_sym = sym.Add(psi_sym, -psi_sym.evalf(6, subs={x: -np.pi}))
+        psi_sym = sym.Add(psi_sym, -psi_sym.evalf(10, subs={x: -np.pi}))
 
         jz_sym = sym.diff(by_sym, x)
         bz_sym = sym.sqrt(bz0_sym**2 - by_sym**2)
         jy_sym = sym.diff(bz_sym, x)
 
-        output_dict = {}
+        output_dict = input_dict()
         output_dict["psi"] = sym.lambdify([x,psi0_sym], psi_sym)
         output_dict["by"] = sym.lambdify([x,psi0_sym], by_sym)
         output_dict["jz"] = sym.lambdify([x,psi0_sym], jz_sym)
@@ -401,7 +401,7 @@ class HMHDslab():
 
         nx=250
         nz=250
-        ncont=150
+        ncont=200
         plot=True
         plot_title=None
         xlims=[-2, 2]
@@ -450,8 +450,8 @@ class HMHDslab():
         cont_pts = [c2.collections[max_closed_ind].get_paths()[0].vertices]
 
         max_val = np.max(psi_main[:])
-        contf = ax.contourf(xm_main, zm_main, psi_main[:,:]/max_val, levels=20, alpha=0.8)
-        cont = ax.contour(xm_main, zm_main, psi_main[:,:]/max_val, levels=20, alpha=0.8, colors='black', linestyles='solid')
+        contf = ax.contourf(xm_main, zm_main, psi_main[:,:]/max_val, levels=20, alpha=0.0)
+        cont = ax.contour(xm_main, zm_main, psi_main[:,:]/max_val, levels=25, alpha=0.8, colors='black', linestyles='solid')
 
         if(len(cont_pts) < 1):
             island_w = 0.0
@@ -503,7 +503,7 @@ class HMHDslab():
     #     #fig.colorbar(contf)
     #     return contf, cont
 
-    def animate_run(root_fname="run_Tearing/", num_contours=30):
+    def animate_run(root_fname="run_Tearing/", num_contours=30, frames=None, fps = 8, save=False):
 
         global fig, ax, cont, contf, pl1, pl2, pl3, pl4, pl5, pl6, num_contours_global
 
@@ -521,13 +521,19 @@ class HMHDslab():
         pl6 = ax.plot([1],[1], alpha=0)
         num_contours_global = num_contours
 
-        fps = 8
-        frames = len(glob.glob(root_fname+'/data*.hdf'))
+        
+        if frames is None:
+            frames = len(glob.glob(root_fname+'/data*.hdf'))//1
+        
         ani = anim.FuncAnimation(fig, lambda x: HMHDslab.animate_cont(x, root_fname), frames=frames, interval=1000/fps, blit=False, repeat=False);
         plt.close()
 
-        return HTML(ani.to_jshtml())
+        # if(save==True):
+        #     ani.save(root_fname+"_anim.mp4", 'ffmpeg', 12)
 
+        # return HTML(ani.to_jshtml())
+        return ani
+        
     def roll_scalar(scalar):
         ind = np.arange(scalar.shape[1])
         ind = np.roll(ind, len(ind)//2)
@@ -1165,6 +1171,8 @@ class HMHDslab():
         time_vals = []
 
         num_frames = len(fnames_h5files) if num_frames is None else num_frames
+        if(num_frames < 1):
+            raise ValueError(f"folder '{root_fname}' does not exist")
 
         def get_individ_run(fname):
             return np.asarray(HMHDslab.get_width_As_HMHD(fname, nx=250, nz=250, ncont=2000, plot=False))
@@ -1189,7 +1197,7 @@ class HMHDslab():
         plt.xlabel("Alfven time")
         plt.ylabel("Island width")
         plt.ylim([0, plt.ylim()[1]])
-        return np.array(widths), np.array(A_s)
+        return np.array(widths), np.array(A_s), np.array(times)
 
     def plot_w_As_vs_time(root_fname):
         widths, A_s = HMHDslab.get_width_run(root_fname)
