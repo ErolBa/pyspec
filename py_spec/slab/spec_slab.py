@@ -20,6 +20,7 @@ from scipy.optimize import minimize_scalar
 from copy import deepcopy
 import json
 
+
 class SPECslab():
 	"""
 	Class for running the slab (G=1) case, including plotting, analyzing, and perturbing equilibrium
@@ -319,6 +320,12 @@ class SPECslab():
 		Z[3] = np.einsum(sum_string,-cosa * ((Zmn_p - Zmn) * _in)[:,None,None], factor[:,0])
 
 		return R, Z
+
+	def bla():
+		o = SPECout('test.sp')
+
+		o.get_B()
+
 
 	def get_spec_poly_basis(Lsingularity, mpol, lrad, sarr):
 

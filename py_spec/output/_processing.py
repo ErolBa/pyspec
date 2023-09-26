@@ -111,12 +111,12 @@ def get_grid_and_jacobian_and_metric(
             Zbc = Zbc[:, nax]
 
     dR1 = Rac + fac[0] * (Rbc - Rac)
+
     Rarr0 = np.sum(dR1 * cos, axis=0)
 
     Rarr1 = np.sum(fac[1] * (Rbc - Rac) * cos, axis=0)
     Rarr2 = np.sum(-im * dR1 * sin, axis=0)
     Rarr3 = np.sum(in_ * dR1 * sin, axis=0)
-
     Rarr = np.array([Rarr1, Rarr2, Rarr3])
 
     # We only need Z for Igeometry=3
@@ -329,10 +329,14 @@ def get_B(
     from pyoculus.problems import SPECBfield
 
     eq = SPECBfield(self, lvol=lvol + 1)
+
     if not derivative:
         B = eq.B_many(sarr, tarr, zarr, input1D=input1D)
     else:
         B, dBdX = eq.dBdX_many(sarr, tarr, zarr, input1D=input1D)
+
+    # ## just for testing temporary
+    # return jacobian
 
     Bcontrav = B / jacobian[...,nax]
 
