@@ -4,5 +4,5 @@ __version__ = "3.1.0"
 #from .ci import test
 from .input.spec_namelist import SPECNamelist
 from .output.spec import SPECout
-from .slab.spec_slab import SPECslab, input_dict
-from .slab.hmhd_slab import HMHDslab
+from .slab.main import SPECslab
+from .slab.input_dict import input_dict

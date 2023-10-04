@@ -3,3 +3,4 @@ py_spec.egg-info/
 *.nbi
 *.nbc
 *.pyc
+*/*.ipynb_checkpoints*

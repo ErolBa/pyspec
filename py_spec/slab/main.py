@@ -1,9 +1,7 @@
 ## Written by Erol Balkovic
-#!/usr/bin/env python3
 
 import numpy as np
 import matplotlib
-# matplotlib.use("Qt5Agg")
 import matplotlib.pyplot as plt
 import h5py
 from py_spec import SPECNamelist, SPECout
@@ -14,12 +12,10 @@ import numpy.linalg as linalg
 import numba
 import os
 import contextlib
-import warnings
 import sympy as sym
 from scipy.optimize import minimize_scalar
-from copy import deepcopy
-import json
 
+from .input_dict import input_dict
 
 class SPECslab():
 	"""
@@ -680,7 +676,7 @@ class SPECslab():
 				At, Az = SPECslab.get_spec_vecpot(fname, v, sarr, tarr, np.array([0]))
 				Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, v, sarr, tarr, np.array([0]))
 				ax.contour(Tarr, Rarr, Az[:,:,0], levels=[np.mean(Az)], alpha=0.9, colors=col, linestyles='solid')
-#
+	#
 		At, Az = SPECslab.get_spec_vecpot(fname, lvol, sarr, tarr, np.array([0]))
 		Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, np.array([0]))
 
@@ -2013,56 +2009,6 @@ class SPECslab():
 		finally:
 			os.chdir(old_path)
 
-class input_dict(dict):
-	"""input dictionary class
-		-> with dot.notation access to dictionary attributes"""
-
-	__getattr__ = dict.get
-	__setattr__ = dict.__setitem__
-	__delattr__ = dict.__delitem__
-
-	def __new__(cls, *args, **kwargs):
-		obj = dict().__new__(cls)
-		return obj
-
-	def __init__(self, fname=None):
-		if(fname is not None):
-			if(isinstance(fname, str)):       
-				with open(fname, 'r') as f:
-					d = json.load(f)
-			elif(isinstance(fname, dict)):
-				d = fname
-			self.update(d)
-	
-			for k in self.keys():
-				if(isinstance(self[k], list)):
-					self[k] = np.array(self[k])
-
-	def set_if_none(self, key, val):
-		if(key not in self.keys()):
-			self[key] = val
-
-	def has_key(self, key):
-		if(key in self.keys()):
-			return True
-		else:
-			return False
-
-	def copy(self, memo=None):
-		return input_dict(deepcopy(dict(self), memo=memo))
-
-	def save_json(self, fname):
-		def default(obj):
-			if isinstance(obj, np.ndarray):
-				return obj.tolist()
-			else:
-				return None
-			raise TypeError(f'Not serializable {obj}')
-
-		with open(fname, 'w') as f:
-			json.dump(self, f, default=default, indent=4, sort_keys=True)
-
-
 @numba.njit(cache=True)
 def check_intersect_helper(x, nvol):
 	for v in range(nvol):
@@ -2087,8 +2033,6 @@ def print_attrs(name, obj):
 				print(shift + '\t' + f"{key}: {val.shape} \t\n{val[:]}")
 			else:
 				print(shift + '\t' + f"{key}: {val[0]}")
-			# print_val = val[0] if val.shape == (1,) else val.shape
-			# print(shift + '\t' + f"{key}: {print_val}")
 	except:
 		pass
 
@@ -2175,8 +2119,3 @@ def vecpot_to_contrav(T, Ate, Aze, Ato, Azo, jac, im, _in, tarr, zarr):
 		# print('bt', Bz[:,0,0])
 
 		return np.array([Bs, Bt, Bz])
-
-
-if __name__ == "__main__":
-
-	print("SPECslab contains tools for running and analyzing SPEC in slab geometry (G=1)")
