@@ -3,14 +3,12 @@
 import numpy as np
 import matplotlib.pyplot as plt
 import h5py
-from py_spec import SPECNamelist
-from . import SPECslab, input_dict
-from scipy import integrate, interpolate, optimize
+from . import input_dict
+from scipy import integrate
 import subprocess
 import sys
 import numba
 import warnings
-import sympy as sym
 import glob
 from scipy.interpolate import RectBivariateSpline, InterpolatedUnivariateSpline
 import matplotlib
@@ -23,6 +21,7 @@ from tqdm.auto import tqdm
 import json
 from textwrap import dedent
 from joblib import Parallel, delayed
+from contourpy import contour_generator
 
 class HMHDslab():
 
@@ -985,7 +984,7 @@ class HMHDslab():
         return island_w, island_As
 
 
-    def get_width_As_HMHD(outfile, nx=600, nz=600, ncont=600, plot=True, plot_title=None, xlims=None, ylims=[0, 2*np.pi]):
+    def get_width_As_HMHD(outfile, nx=400, nz=400, ncont=300, plot=True, plot_title=None, xlims=None, ylims=[0, 2*np.pi]):
 
         with h5py.File(outfile, 'r') as h5:
             psi = h5['psi'][2:-2, 2:-1]
@@ -1074,14 +1073,14 @@ class HMHDslab():
             plt.ylabel("R", fontsize=18)
             plt.tight_layout()
 
-            plt.text(4.32, 0.18, outfile[:-4], fontsize=11, fontweight='normal', bbox=dict(facecolor='white', alpha=0.8))
+            # plt.text(4.32, 0.18, outfile[:-4], fontsize=11, fontweight='normal', bbox=dict(facecolor='white', alpha=0.8))
 
         # print(f"HMHD Island width {island_w:.8f}")
         # print("o-pt loc", xm_main[o_point])
 
         return island_w, Asym, time
 
-    def get_width_As_rpmx_HMHD(outfile, nx=600, nz=600, ncont=600, plot=True, plot_title=None, xlims=[-2, 2], ylims=[-np.pi, np.pi]):
+    def get_width_As_rpmx_HMHD(outfile, nx=400, nz=400, ncont=300, plot=True, plot_title=None, xlims=[-2, 2], ylims=[-np.pi, np.pi]):
 
         with h5py.File(outfile, 'r') as h5:
             psi = h5['psi'][2:-2, 2:-1]
@@ -1175,7 +1174,7 @@ class HMHDslab():
             raise ValueError(f"folder '{root_fname}' does not exist")
 
         def get_individ_run(fname):
-            return np.asarray(HMHDslab.get_width_As_HMHD(fname, nx=250, nz=250, ncont=2000, plot=False))
+            return np.asarray(HMHDslab.get_width_As_HMHD(fname, nx=601, nz=601, ncont=2000, plot=False))
 
         # find withds for each frame in parallel (multiple processes)
         results = np.array(
@@ -1187,6 +1186,93 @@ class HMHDslab():
         w_sat_vals = results[:,0]
         As_sat_vals = results[:,1]
         time_vals = results[:,2]
+
+        return w_sat_vals, As_sat_vals, time_vals
+    
+    def get_width_v2(fname, nx=401, nz=401, num_levels=300, plot=False):
+
+        # important to note: the island might be shifted in the radial 'z' direction
+        with h5py.File(fname, 'r') as h5:
+            # psi = h5['psi'][2:-2, 2:-1]
+            psi = HMHDslab.roll_scalar(h5['psi'][2:-2, 2:-1])
+            psi *= -1.0
+            x = h5["x"][2:-1]
+            z = h5["z"][2:-2]
+            time = h5["ttime"][0]
+
+        x_interp = np.linspace(np.min(x), np.max(x), nx, endpoint=True)
+        z_interp = np.linspace(np.min(z), np.max(z), nz, endpoint=True)
+        psi_interp_spline = RectBivariateSpline(z, x, psi)
+        psi_interp_val = psi_interp_spline(z_interp, x_interp, grid=True)
+
+        # identify location of o and x pts
+        ind_opt = np.unravel_index((psi_interp_val[:,:]).argmin(), psi_interp_val[:,:].shape)
+        ind_xpt = [np.argmin(psi_interp_val[:,0]), 0]
+        loc_opt_x = x_interp[ind_opt[1]]
+        loc_opt_z = z_interp[ind_opt[0]]
+        loc_xpt_x = x_interp[ind_xpt[1]] #z_interp[ind_xpt[0]]
+        loc_xpt_z = z_interp[ind_xpt[0]]
+        # print(f'opt: {loc_opt_x} {loc_opt_z}')
+        # print(f'xpt: {loc_xpt_x} {loc_xpt_z}')
+
+        psi_opt = psi_interp_spline(loc_opt_z, loc_opt_x)[0,0]
+        psi_xpt = psi_interp_spline(loc_xpt_z, loc_xpt_x)[0,0]
+        # print('psi_xpt', psi_xpt)
+        # print('psi_opt', psi_opt)
+
+        cont_gen = contour_generator(x_interp, z_interp, psi_interp_val)
+        
+        levels = np.linspace(psi_xpt, psi_opt, num_levels)
+
+        for l in range(len(levels)):
+            lines = cont_gen.lines(levels[l])
+            if(len(lines) == 1):
+                # print('found',l, levels[l])
+                break
+        
+        if(l ==  len(levels)-1):
+            # print("No island found!")
+            width = 0.0
+        else:
+            zs = np.concatenate([i[:,1] for i in lines])
+            width = np.max(zs) - np.min(zs)
+        
+            if(width < 0):
+                raise ValueError(f"get_width_v2({fname}): width is negative...")
+        
+        if(plot):
+            plt.pcolormesh(x, z, psi)
+            plt.colorbar()
+
+            for i in range(len(lines)):
+                plt.plot(lines[i][:,0], lines[i][:,1], 'r-')
+            
+            # plt.contour(x_interp, z_interp, psi_interp_val, levels=levels[::-1], colors='red', linestyles='solid')
+
+            plt.plot(loc_opt_x, loc_opt_z, 'go')
+            plt.plot(loc_xpt_x, loc_xpt_z, 'gx')  
+
+        return width, time
+
+
+    def get_width_run_v2(root_fname="run_Tearing", num_frames=None):
+        fnames_h5files = sorted(glob.glob(root_fname+"/data*.hdf"))
+        w_sat_vals = []
+        As_sat_vals = []
+        time_vals = []
+
+        num_frames = len(fnames_h5files) if num_frames is None else num_frames
+        if(num_frames < 1):
+            raise ValueError(f"folder '{root_fname}' does not exist")
+
+        for f in tqdm(range(num_frames)):
+            result = HMHDslab.get_width_v2(fnames_h5files[f])
+            w_sat_vals.append(result[0])
+            time_vals.append(result[1])
+
+        w_sat_vals = np.array(w_sat_vals)
+        As_sat_vals = np.zeros_like(w_sat_vals)
+        time_vals = np.array(time_vals)
 
         return w_sat_vals, As_sat_vals, time_vals
 

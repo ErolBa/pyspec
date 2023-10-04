@@ -659,7 +659,6 @@ class SPECslab():
 
 		data = SPECout(fname)
 
-		fdata = data.vector_potential
 		lvol =  data.input.physics.Nvol // 2 #-11
 		sarr = np.linspace(-1, 1, ns)
 		tarr = np.linspace(0, 2*np.pi, nt)
@@ -675,12 +674,12 @@ class SPECslab():
 			for v in np.arange(1, lvol, 1):
 				At, Az = SPECslab.get_spec_vecpot(fname, v, sarr, tarr, np.array([0]))
 				Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, v, sarr, tarr, np.array([0]))
-				ax.contour(Tarr, Rarr, Az[:,:,0], levels=1, alpha=0.9, lw=1.3, colors=col, linestyles='solid')
+				ax.contour(Tarr, Rarr, Az[:,:,0], levels=1, alpha=0.9, colors=col, linestyles='solid')
 
 			for v in np.arange(lvol+1, data.input.physics.Nvol-1, 1):
 				At, Az = SPECslab.get_spec_vecpot(fname, v, sarr, tarr, np.array([0]))
 				Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, v, sarr, tarr, np.array([0]))
-				ax.contour(Tarr, Rarr, Az[:,:,0], levels=[np.mean(Az)], alpha=0.9, lw=1.3, colors=col, linestyles='solid')
+				ax.contour(Tarr, Rarr, Az[:,:,0], levels=[np.mean(Az)], alpha=0.9, colors=col, linestyles='solid')
 #
 		At, Az = SPECslab.get_spec_vecpot(fname, lvol, sarr, tarr, np.array([0]))
 		Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, np.array([0]))
@@ -760,8 +759,6 @@ class SPECslab():
 			ax.set_xlabel("y", fontsize=16)
 			ax.set_ylabel("x", fontsize=16)
 			plt.tight_layout()
-
-		# print('r_x', r_x)
 
 		return island_w, Asym
 
