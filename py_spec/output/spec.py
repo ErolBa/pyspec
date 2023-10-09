@@ -42,7 +42,7 @@ class SPECout:
     )
     from ._plot_modB import plot_modB, plot_fmn
     from ._plot_iota import plot_iota
-    from ._get_field import get_field_contrav, get_field_cart
+    from ._get_field import get_field_contrav, get_field_cart, get_field_mod
     from ._get_geometry import get_metric, get_jacobian
 
     def __init__(self, *args, **kwargs):

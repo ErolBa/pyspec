@@ -18,10 +18,22 @@ if(run_with_numba):
 else:
     run_decorator = lambda x: x
 
+def get_field_mod(self, lvol, sarr, tarr, zarr, Bcontrav=None, g=None):
+
+    if(Bcontrav is None):
+        Bcontrav = self.get_field_contrav(lvol, sarr, tarr, zarr)
+
+    if(g is None):
+        g = self.get_metric(sarr, tarr, zarr, lvol)
+
+    Bmod = np.sqrt(np.einsum("i...,ij...,j...->...", Bcontrav, g, Bcontrav, optimize=True))
+
+    return Bmod
+
 
 def get_field_cov(self, lvol, sarr, tarr, zarr):
     
-    raise NotImplementedError("Not tested yet!")
+    # raise NotImplementedError("Not tested yet!")
 
     # not tested!!
     Bcontrav = get_field_contrav(self, lvol, sarr, tarr, zarr)

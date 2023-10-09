@@ -364,6 +364,7 @@ def get_Bcart(self,
 
     return Bcontrav
 
+
 def get_modB(self, Bcontrav, g, derivative=False, dBcontrav=None, dg=None):
     """Input - Bcontrav has to come from get_B function"""
     modB = np.sqrt(np.einsum("...i,...ji,...j->...", Bcontrav, g, Bcontrav))
@@ -380,6 +381,7 @@ def get_B_covariant(self, Bcontrav, g, derivative=False):
     """Get covariant component of B"""
     Bco = np.einsum("...i,...ji->...j", Bcontrav, g)
     return Bco
+
 
 def test_derivatives(self, lvol=0, s=0.3, t=0.4, z=0.5, delta=1e-6, tol=1e-6):
     ds = delta
