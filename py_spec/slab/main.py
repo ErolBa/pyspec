@@ -7,7 +7,6 @@ import h5py
 from py_spec import SPECNamelist, SPECout
 from scipy import integrate, interpolate, optimize
 import subprocess
-import sys
 import numpy.linalg as linalg
 import numba
 import os
@@ -1089,11 +1088,11 @@ class SPECslab():
 		try:
 			if(show_output):
 				if(log_file is None):
-					subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True)
+					subprocess.run(f'mpirun -n {num_cpus} ~/codes/SPEC/xspec {fname}', shell=True)
 				else:
-					subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True, stdout=log_file, stderr=log_file)
+					subprocess.run(f'mpirun -n {num_cpus} ~/codes/SPEC/xspec {fname}', shell=True, stdout=log_file, stderr=log_file)
 			else:
-				subprocess.run(f'mpirun -n {num_cpus} ~/SPEC/xspec {fname}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+				subprocess.run(f'mpirun -n {num_cpus} ~/codes/SPEC/xspec {fname}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 			data = SPECout(fname+".h5")
 
@@ -1115,11 +1114,11 @@ class SPECslab():
 		try:
 			if(show_output):
 				if(log_file is None):
-					subprocess.run(f'mpirun -n {num_cpus} ~/spec_descent/SPEC/xspec {fname}', shell=True)
+					subprocess.run(f'mpirun -n {num_cpus} ~/codes/spec_descent/SPEC/xspec {fname}', shell=True)
 				else:
-					subprocess.run(f'mpirun -n {num_cpus} ~/spec_descent/SPEC/xspec {fname}', shell=True, stdout=log_file, stderr=log_file)
+					subprocess.run(f'mpirun -n {num_cpus} ~/codes/spec_descent/SPEC/xspec {fname}', shell=True, stdout=log_file, stderr=log_file)
 			else:
-				subprocess.run(f'mpirun -n {num_cpus} ~/spec_descent/SPEC/xspec {fname}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+				subprocess.run(f'mpirun -n {num_cpus} ~/codes/spec_descent/SPEC/xspec {fname}', shell=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 			data = SPECout(fname+".h5")

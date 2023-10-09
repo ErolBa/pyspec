@@ -4,10 +4,11 @@
 ## not tested for nonstell-symmetric cases
 
 import numpy as np
-from numba import njit, prange
+from numba import njit
 
 ## parameters ---------------------------------------------------------
 
+## numba signficantly speeds up calculations, can be installed with pip install ... numba
 run_with_numba = True
 
 ##---------------------------------------------------------------------
@@ -19,6 +20,9 @@ else:
 
 
 def get_field_cov(self, lvol, sarr, tarr, zarr):
+    
+    raise NotImplementedError("Not tested yet!")
+
     # not tested!!
     Bcontrav = get_field_contrav(self, lvol, sarr, tarr, zarr)
     metric = self.get_metric(sarr, tarr, zarr, lvol)
@@ -28,7 +32,8 @@ def get_field_cov(self, lvol, sarr, tarr, zarr):
     return Bcov
 
 def get_field_cart(self, lvol, sarr, tarr, zarr):
-    # not tested!!!
+
+    raise NotImplementedError("Not tested yet!")
     
     geometry = self.input.physics.Igeometry
     rpol = self.input.physics.rpol
@@ -37,8 +42,8 @@ def get_field_cart(self, lvol, sarr, tarr, zarr):
     Zas, Zbs = self.output.Zbs[lvol : lvol + 2]
     # Ras, Rbs = self.output.Rbs[lvol : lvol + 2]
     # Zac, Zbc = self.output.Zbc[lvol : lvol + 2]
-    im = np.array(self.output.im, dtype=np.int)
-    in_ = np.array(self.output.in_, dtype=np.int)
+    im = np.array(self.output.im, dtype=int)
+    in_ = np.array(self.output.in_, dtype=int)
 
     Rarr, Zarr = self.get_coord_transform(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
 
@@ -136,7 +141,7 @@ def get_field_sing(sarr, tarr, zarr, lrad, im, _in, basis, Aze, Ate, jac):
                     for l in range(lrad+1):
                         Bcontrav[0, s, t, z] += (- mi * Aze[ii, l] - ni * Ate[ii, l]) * basis[l, mi, 0, s] * sarg
                         Bcontrav[1, s, t, z] += (- Aze[ii, l] * basis[l, mi, 1, s]) * 0.5 * carg
-                        Bcontrav[2, s, t, z] += (Ate[ii, l] * basis[l, mi, 1, s]) * 0.5 * carg
+                        Bcontrav[2, s, t, z] += (Ate[ii, l] * basis[l, mi, 1, s]) * 0.5 * carg 
 
                     # if(not stell_sym): # needs Ato, Azo
                     #     Bcontrav[0, s, t, z] += (- mi * Azo[ii, l+1] - ni * Ato[ii, l+1]) * basis[l, mi, 0, s] * carg

@@ -2,10 +2,11 @@
 ## gives metric, jacobian, grid...
 
 import numpy as np
-from numba import njit, prange
+from numba import njit
 
 ## parameters ---------------------------------------------------------
 
+## numba signficantly speeds up calculations, can be installed with pip install ... numba
 run_with_numba = True
 
 ##---------------------------------------------------------------------
@@ -21,8 +22,8 @@ def get_jacobian(self, sarr, tarr, zarr, lvol):
     geometry = self.input.physics.Igeometry
     rpol = self.input.physics.rpol
     rtor = self.input.physics.rtor
-    im = np.array(self.output.im, dtype=np.int)
-    in_ = np.array(self.output.in_, dtype=np.int)
+    im = np.array(self.output.im, dtype=int)
+    in_ = np.array(self.output.in_, dtype=int)
     Rac, Rbc = self.output.Rbc[lvol : lvol + 2]
     Zas, Zbs = self.output.Zbs[lvol : lvol + 2]
     # Ras, Rbs = self.output.Rbs[lvol : lvol + 2]
@@ -129,8 +130,8 @@ def get_metric(self, sarr, tarr, zarr, lvol):
     Zas, Zbs = self.output.Zbs[lvol : lvol + 2]
     # Ras, Rbs = self.output.Rbs[lvol : lvol + 2]
     # Zac, Zbc = self.output.Zbc[lvol : lvol + 2]
-    im = np.array(self.output.im, dtype=np.int)
-    in_ = np.array(self.output.in_, dtype=np.int)
+    im = np.array(self.output.im, dtype=int)
+    in_ = np.array(self.output.in_, dtype=int)
 
     # return get_metric_helper(geometry, rpol, rtor, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
     return get_metric_helper_v2(geometry, rpol, rtor, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
@@ -253,7 +254,7 @@ def get_metric_helper_v2(geometry, rpol, rtor, Rac, Rbc, Zas, Zbs, im, in_, sarr
     
     elif(geometry == 2): # cylindrical
         metric[1, 1] += Rarr[0] ** 2
-        metric[2, 2] += 1.0
+        metric[2, 2] += 1.0 
 
     elif(geometry == 3): # toroidal
         for i in range(3):

@@ -46,7 +46,13 @@ class input_dict(dict):
 				return obj.tolist()
 			else:
 				return None
-			raise TypeError(f'Not serializable {obj}')
+			# raise TypeError(f'Not serializable {obj}')
 
 		with open(fname, 'w') as f:
 			json.dump(self, f, default=default, indent=4, sort_keys=True)
+
+	def get_keys(self):
+		return list(self.keys())
+
+	def __dir__(self):
+		return dict().__dir__() + self.get_keys() + ['get_keys','save_json','copy','has_key','set_if_none']

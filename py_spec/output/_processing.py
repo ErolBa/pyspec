@@ -326,7 +326,10 @@ def get_B(
 
     nax = np.newaxis
 
-    from pyoculus.problems import SPECBfield
+    try:
+        from pyoculus.problems import SPECBfield
+    except ModuleNotFoundError as e:
+        raise ModuleNotFoundError("PyOculus is not installed!")
 
     eq = SPECBfield(self, lvol=lvol + 1)
 
@@ -334,9 +337,6 @@ def get_B(
         B = eq.B_many(sarr, tarr, zarr, input1D=input1D)
     else:
         B, dBdX = eq.dBdX_many(sarr, tarr, zarr, input1D=input1D)
-
-    # ## just for testing temporary
-    # return jacobian
 
     Bcontrav = B / jacobian[...,nax]
 
@@ -354,6 +354,9 @@ def get_Bcart(self,
         zarr=np.linspace(0, 0, 1),
         input1D=False):
 
+    if(self.geometry is not 1):
+        raise NotImplementedError("Bcart only implemented for geometry=1")
+    
     Bcontrav = self.get_B(lvol, jacobian, sarr, tarr, zarr, input1D)
 
     Bcontrav[...,1] /= self.input.physics.rpol*2*np.pi

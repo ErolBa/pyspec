@@ -4,3 +4,8 @@ py_spec.egg-info/
 *.nbc
 *.pyc
 */*.ipynb_checkpoints*
+*.h5
+*.sp.end
+*.DF
+*.ma
+*.hessian

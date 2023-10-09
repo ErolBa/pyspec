@@ -2,5 +2,3 @@ h5py
 matplotlib
 f90nml
 numpy
-coilpy
-numba
