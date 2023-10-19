@@ -106,7 +106,7 @@ def get_jacobian_helper_v2(geometry, rpol, rtor, im, in_, Rac, Rbc, Zas, Zbs, sa
 
     jac = np.empty((len(sarr), len(tarr), len(zarr)))
 
-    Rarr, Zarr = get_coord_transform(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
+    Rarr, Zarr = get_coord_transform_helper(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
 
     if(geometry == 1): # slab/cartesian
         jac = Rarr[1] * (rpol * rtor)
@@ -242,7 +242,7 @@ def get_metric_helper_v2(geometry, rpol, rtor, Rac, Rbc, Zas, Zbs, im, in_, sarr
     
     metric = np.empty((3, 3, len(sarr), len(tarr), len(zarr)))
 
-    Rarr, Zarr = get_coord_transform(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
+    Rarr, Zarr = get_coord_transform_helper(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
 
     for i in range(3):
         for j in range(3):
@@ -264,8 +264,21 @@ def get_metric_helper_v2(geometry, rpol, rtor, Rac, Rbc, Zas, Zbs, im, in_, sarr
 
     return metric
 
+
+def get_coord_transform(self, lvol, sarr, tarr, zarr):
+
+    geometry = self.input.physics.Igeometry
+    Rac, Rbc = self.output.Rbc[lvol : lvol + 2]
+    Zas, Zbs = self.output.Zbs[lvol : lvol + 2]
+    im = np.array(self.output.im, dtype=int)
+    in_ = np.array(self.output.in_, dtype=int)
+
+    Rarr, Zarr = get_coord_transform_helper(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
+    return Rarr, Zarr
+
+
 @run_decorator
-def get_coord_transform(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol):
+def get_coord_transform_helper(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol):
     """Return coordinate transformations: R, dR/ds, dR/dtheta, dR/dzeta 
         (and for toroidal geometry: Z, dZ/ds, dZ/dtheta, dZ/dzeta)
     Returns:

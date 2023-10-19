@@ -32,10 +32,7 @@ def get_field_mod(self, lvol, sarr, tarr, zarr, Bcontrav=None, g=None):
 
 
 def get_field_cov(self, lvol, sarr, tarr, zarr):
-    
-    # raise NotImplementedError("Not tested yet!")
 
-    # not tested!!
     Bcontrav = get_field_contrav(self, lvol, sarr, tarr, zarr)
     metric = self.get_metric(sarr, tarr, zarr, lvol)
 
@@ -44,22 +41,21 @@ def get_field_cov(self, lvol, sarr, tarr, zarr):
     return Bcov
 
 def get_field_cart(self, lvol, sarr, tarr, zarr):
-
-    raise NotImplementedError("Not tested yet!")
+    """Generates the cartesian magnetic field in (R, Z, phi) coordinates)"""
     
-    geometry = self.input.physics.Igeometry
-    rpol = self.input.physics.rpol
-    rtor = self.input.physics.rtor
-    Rac, Rbc = self.output.Rbc[lvol : lvol + 2]
-    Zas, Zbs = self.output.Zbs[lvol : lvol + 2]
-    # Ras, Rbs = self.output.Rbs[lvol : lvol + 2]
-    # Zac, Zbc = self.output.Zbc[lvol : lvol + 2]
-    im = np.array(self.output.im, dtype=int)
-    in_ = np.array(self.output.in_, dtype=int)
+    # geometry = self.input.physics.Igeometry
+    # rpol = self.input.physics.rpol
+    # rtor = self.input.physics.rtor
+    # Rac, Rbc = self.output.Rbc[lvol : lvol + 2]
+    # Zas, Zbs = self.output.Zbs[lvol : lvol + 2]
+    # # Ras, Rbs = self.output.Rbs[lvol : lvol + 2]
+    # # Zac, Zbc = self.output.Zbc[lvol : lvol + 2]
+    # im = np.array(self.output.im, dtype=int)
+    # in_ = np.array(self.output.in_, dtype=int)
 
-    Rarr, Zarr = self.get_coord_transform(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
+    Rarr, Zarr = self.get_coord_transform(lvol, sarr, tarr, zarr)
 
-    Bcontrav = get_field_contrav(self, lvol, sarr, tarr, zarr)
+    Bcontrav = self.get_field_contrav(lvol, sarr, tarr, zarr)
 
     Bcart = np.empty_like(Bcontrav)
 

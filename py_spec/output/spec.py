@@ -43,7 +43,7 @@ class SPECout:
     from ._plot_modB import plot_modB, plot_fmn
     from ._plot_iota import plot_iota
     from ._get_field import get_field_contrav, get_field_cart, get_field_mod
-    from ._get_geometry import get_metric, get_jacobian
+    from ._get_geometry import get_metric, get_jacobian, get_coord_transform
 
     def __init__(self, *args, **kwargs):
         # args[0] should always be the name of a file or an item inside the root object

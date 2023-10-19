@@ -13,6 +13,7 @@ import os
 import contextlib
 import sympy as sym
 from scipy.optimize import minimize_scalar
+from rich.console import Console
 
 from .input_dict import input_dict
 
@@ -316,11 +317,6 @@ class SPECslab():
 
 		return R, Z
 
-	def bla():
-		o = SPECout('test.sp')
-
-		o.get_B()
-
 
 	def get_spec_poly_basis(Lsingularity, mpol, lrad, sarr):
 
@@ -388,14 +384,7 @@ class SPECslab():
 
 		return T
 
-	def get_contra2cov(data, lvol, vec_contrav, sarr, theta, phi, norm):
-
-		g = SPECslab.get_spec_metric(data, lvol, sarr, theta, phi)
-
-		# print(g.shape, vec_contrav.shape)
-		vec_cov = np.einsum('xystz,ystz->xstz', g, vec_contrav)
-		return vec_cov
-
+	
 	def get_spec_regularization_factor(geometry, mn, im, lvol, sarr, mregular, ForG):
 
 		ns = len(sarr)
@@ -442,49 +431,6 @@ class SPECslab():
 			fac[:,0,:] = np.ones((mn, ns))
 
 		return fac
-
-	def get_spec_metric(data, lvol, sarr, theta, zeta):
-
-		ns = len(sarr)
-		nt = len(theta)
-		nz = len(zeta)
-		
-		G = data.input.physics.Igeometry
-		rtor = data.input.physics.rtor
-		rpol = data.input.physics.rpol
-
-		gmat = np.zeros((3, 3, ns, nt, nz))
-		Rarr, Zarr = SPECslab.get_spec_R_derivatives(data, lvol, sarr, theta, zeta, 'R')
-
-		if(G == 1):
-			gmat[0,0] = Rarr[1]**2
-			gmat[1,1] = Rarr[2]**2 + rpol**2
-			gmat[2,2] = Rarr[3]**2 + rtor**2
-			gmat[0,1] = Rarr[1]*Rarr[2]
-			gmat[0,2] = Rarr[1]*Rarr[3]
-			gmat[1,2] = Rarr[2]*Rarr[3]
-		elif(G == 2):
-			gmat[0,0] = Rarr[1]**2
-			gmat[1,1] = Rarr[2]**2 + Rarr[0]**2
-			gmat[2,2] = Rarr[3]**2 + rtor**2
-			gmat[0,1] = Rarr[1]*Rarr[2]
-			gmat[0,2] = Rarr[1]*Rarr[3]
-			gmat[1,2] = Rarr[2]*Rarr[3]
-		elif(G == 3):
-			gmat[0,0] = Rarr[1]**2 + Zarr[1]**2
-			gmat[1,1] = Rarr[2]**2 + Zarr[2]**2
-			gmat[2,2] = Rarr[0]**2 + Rarr[3]**2 + Zarr[3]**2
-			gmat[0,1] = Rarr[1]*Rarr[2] + Zarr[1]*Zarr[2]
-			gmat[0,2] = Rarr[1]*Rarr[3] + Zarr[1]*Zarr[3]
-			gmat[1,2] = Rarr[2]*Rarr[3] + Zarr[2]*Zarr[3]
-		else:
-			raise ValueError("G (geometry setting) has to be 1,2, or 3")
-
-		gmat[1,0] = gmat[0,1]
-		gmat[2,1] = gmat[1,2]
-		gmat[2,0] = gmat[0,2]
-
-		return gmat
 
 	def get_spec_radius(data, theta, zeta, vol):
 		# Return the radial position of a KAM surface for a given theta, zeta and Nvol
@@ -547,54 +493,6 @@ class SPECslab():
 		# for vol in range(x_four.shape[0]):
 		#     plt.plot(thetas, x[vol])
 
-	def old_get_spec_vecpot(data, lvol, sarr, tarr, zarr):
-
-		# get vector potential from .h5 spec outpout that uses old/regular chebyshev basis (not recombined)
-
-		vecpot = data.vector_potential
-		im = data.output.im
-		iN = data.output.in_
-		mn = data.output.mn
-		ns = len(sarr)
-		nt = len(tarr)
-		nz = len(zarr)
-
-		Lrad = data.input.physics.Lrad[lvol]
-		Ate = np.array(vecpot.Ate[lvol]).T
-		Aze = np.array(vecpot.Aze[lvol]).T
-		Ato = np.array(vecpot.Ato[lvol]).T
-		Azo = np.array(vecpot.Azo[lvol]).T
-
-		T = np.zeros((Lrad + 1, 2, ns))
-		T[0,0] = np.ones(ns)
-		T[0,1] = np.zeros(ns)
-		T[1,0] = sarr
-		T[1,1] = np.ones(ns)
-
-		for l in range(2, Lrad+1):
-			T[l,0] = 2 * sarr * T[l-1,0] - T[l-2,0]
-			T[l,1] = 2 * T[l-1,0] + 2 * sarr * T[l-1,1] - T[l-2,1]
-
-		fac = np.ones((ns, 2, ns))
-		fac[:,1] = 0
-
-		a = im[:,None,None] * tarr[None,:,None] - iN[:,None,None] * zarr[None,None,:]
-		term_t =  Ate[:,:,None,None]*np.cos(a[None,...]) + Ato[:,:,None,None]*np.sin(a[None,...])
-		term_z = Aze[:,:,None,None]*np.cos(a[None,...]) + Azo[:,:,None,None]*np.sin(a[None,...])
-
-		At_dAt = np.einsum('sa,lia,ljtz->istz', fac[:,0], T, term_t, optimize=True)
-		Az_dAz = np.einsum('sa,lia,ljtz->istz', fac[:,0], T, term_z, optimize=True)
-
-		Az = np.zeros((ns,nt,nz))
-		for j in range(mn):
-			for l in range(Lrad+1):
-				for t in range(nt):
-					for z in range(nz):
-						a = (im[j]*tarr[t]-iN[j]*zarr[z])
-						Az[:,t,z] += fac[j,0]*T[l,0] * (np.cos(a)*Aze[l,j]+np.sin(a)*Azo[l,j])
-
-		return At_dAt[0], Az, At_dAt[1], Az_dAz[1]
-
 	def get_rtarr(data, lvol, sarr, tarr, zarr0):
 
 		Rac = np.array(data.output.Rbc[lvol,:])
@@ -641,7 +539,7 @@ class SPECslab():
 
 		return Rarr, Tarr, dRarr
 
-	def get_islandwidth(fname, ns=500, nt=500, plot=False, plot_title=None, ax=None, xlims=[0, 2*np.pi], ylims=None):
+	def get_islandwidth(fname, ns=400, nt=400, plot=False, plot_title=None, ax=None, xlims=[0, 2*np.pi], ylims=None):
 
 		if(fname[-3:] == '.sp'):
 			fname = fname+".h5"
@@ -684,7 +582,7 @@ class SPECslab():
 
 		# plt.ioff()
 		plt.figure()
-		levels = np.linspace(Az[o_point][0], Az[x_point][0], 700)[1:-1]
+		levels = np.linspace(Az[o_point][0], Az[x_point][0], 400)[1:-1]
 		c2 = plt.contour(Tarr, Rarr, Az[:,:,0], levels=levels, colors='black',linestyles='solid', alpha=0)
 		plt.close()
 		# plt.ion()
@@ -758,172 +656,6 @@ class SPECslab():
 		return island_w, Asym
 
 
-	def get_islandwidth_returnrpmx(fname, ns=500, nt=500, plot=False, plot_title=None, xlims=[0, 2*np.pi], ylims=[0, 2*np.pi]):
-
-		if(fname[-3:] == '.sp'):
-			fname = fname+".h5"
-		elif(fname[-4:] == '.end'):
-			fname = fname[:-4]+".h5"
-
-		if(not os.path.isfile(fname)):
-			print(f"File '{fname}' does not exist (get_islandwidth())")
-			return
-
-		data = SPECout(fname)
-
-		fdata = data.vector_potential
-		lvol =  data.input.physics.Nvol // 2 #-11
-		sarr = np.linspace(-1, 1, ns)
-		tarr = np.linspace(0, 2*np.pi, nt)
-
-		At, Az = SPECslab.get_spec_vecpot(fname, lvol, sarr, tarr, np.array([0]))
-		Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, np.array([0]))
-
-		o_point = np.unravel_index((Az[:,:,0]).argmin(), Az[:,:,0].shape)
-		x_point = np.unravel_index(((Az[:,:,0])**2).argmin(), Az[:,:,0].shape)
-
-		plt.ioff()
-		plt.figure()
-		levels = np.linspace(Az[o_point][0], Az[x_point][0], 700)[1:-1]
-		c2 = plt.contour(Tarr, Rarr, Az[:,:,0], levels=levels, colors='black',linestyles='solid', alpha=0)
-		plt.close()
-		# plt.ion()
-
-		max_closed_ind = -1
-		for i in range(len(c2.collections)):
-			verts = c2.collections[i].get_paths()[0].vertices
-			if(len(c2.collections[i].get_paths()) == 1 and np.linalg.norm(verts[-1]-verts[0]) < 1e-5):
-				max_closed_ind = i
-		cont_pts = [c2.collections[max_closed_ind].get_paths()[0].vertices]
-
-		if(plot):
-			plt.figure()
-			plt.contourf(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.9)
-			# plt.colorbar()
-			plt.contour(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.5, colors='black', linestyles='solid')
-
-		if(len(cont_pts) < 1):
-			island_w = 0.0
-		else:
-			cont_pts = np.concatenate(cont_pts)
-			island_w = np.max(cont_pts[:, 1]) - np.min(cont_pts[:, 1])
-
-			r_up = np.max(cont_pts[:, 1])
-			r_down = np.min(cont_pts[:, 1])
-
-			# r_x = Rarr[x_point]
-			r_x = cont_pts[np.argmin(cont_pts[:,0]), 1]
-			Asym = (r_up-r_x)/(r_x-r_down) - 1
-
-			# print(f"r_up,down,x -- {r_up-np.pi} {r_down-np.pi} {r_x-np.pi}")
-
-			if(plot):
-				plt.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=2)
-
-				plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
-				plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
-				plt.axhline(r_x, color='k', linestyle='dashed', lw=1.5)
-				plt.plot(cont_pts[np.argmin(cont_pts[:,0]), 0], cont_pts[np.argmin(cont_pts[:,0]), 1],'rX', ms=9)
-				plt.plot(Tarr[o_point],Rarr[o_point],'ro', ms=9)
-				plt.plot(Tarr[0], Rarr[0], 'k-', lw=1)
-				plt.plot(Tarr[-1], Rarr[-1], 'k-', lw=1)
-
-		if(plot):
-			if(plot_title is None):
-				plot_title = f"SPEC A_z resonant volume (width {island_w:.4f} Asym {Asym:.4f})"
-			plt.title(plot_title)
-			plt.gcf().canvas.manager.set_window_title(plot_title + f" w={island_w:.3f}")
-			plt.ylim(ylims)
-			plt.xlim(xlims)
-			plt.tight_layout()
-
-		print(f"SPEC Island width {island_w:.8f}")
-
-		return island_w, Asym, r_up, r_down, r_x
-
-
-	def old_get_islandwidth(fname, ns=200, nt=200, plot=False, plot_title=None):
-
-		if(fname[-3:] == '.sp'):
-			fname = fname+".h5"
-		elif(fname[-4:] == '.end'):
-			fname = fname[:-4]+".h5"
-
-		if(not os.path.isfile(fname)):
-			print(f"File '{fname}' does not exist (get_islandwidth())")
-			return
-
-		data = SPECout(fname)
-
-		fdata = data.vector_potential
-		lvol =  data.input.physics.Nvol // 2
-		sarr = np.linspace(-1, 1, ns)
-		tarr = np.linspace(0, 2*np.pi, nt)
-
-		# std approach
-		At, Az, dAt, dAz = SPECslab.old_get_spec_vecpot(data, lvol, sarr, tarr, np.array([0]))
-		Rarr, Tarr, dRarr = SPECslab.get_rtarr(data, lvol, sarr, tarr, np.array([0]))
-
-		o_point = np.unravel_index((Az[:,:,0]).argmin(), Az[:,:,0].shape)
-		x_point = np.unravel_index(((Az[:,:,0])**2).argmin(), Az[:,:,0].shape)
-
-		plt.figure()
-		# c = plt.contour(Tarr, Rarr, Az[:,:,0], levels=[Az[x_point][0]],colors='red',linestyles='solid')
-		levels = np.linspace(Az[o_point][0], Az[x_point][0], 41)[1:-1]
-		c2 = plt.contour(Tarr, Rarr, Az[:,:,0], levels=levels, colors='black',linestyles='solid', alpha=0)
-		plt.close()
-
-		max_closed_ind = -1
-		for i in range(len(c2.collections)):
-			if(len(c2.collections[i].get_paths()) == 1):
-				max_closed_ind = i
-
-		cont_pts = [c2.collections[max_closed_ind].get_paths()[0].vertices]
-
-		if(plot):
-			plt.figure()
-			plt.contourf(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.9)
-			plt.colorbar()
-			plt.contour(Tarr, Rarr, Az[:,:,0], levels=20, alpha=0.5, colors='black', linestyles='solid')
-
-		if(len(cont_pts) < 1):
-			island_w = 0.0
-		else:
-			cont_pts = np.concatenate(cont_pts)
-			island_w = np.max(cont_pts[:, 1]) - np.min(cont_pts[:, 1])
-
-			if(plot):
-				plt.plot(cont_pts[:,0], cont_pts[:,1], 'r-', lw=2)
-
-				plt.axhline(np.min(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
-				plt.axhline(np.max(cont_pts[:, 1]), color='red', linestyle='dashed', lw=1)
-				# plt.plot(Tarr[x_point],Rarr[x_point],'rX', ms=9)
-				plt.plot(Tarr[o_point],Rarr[o_point],'ro', ms=9)
-
-				plt.plot(Tarr[0], Rarr[0], 'k-', lw=1)
-				plt.plot(Tarr[-1], Rarr[-1], 'k-', lw=1)
-
-
-		if(plot):
-			if(plot_title is None):
-				plot_title = f"A_z resonant volume (island width {island_w:.4f})"
-			plt.title(plot_title)
-			plt.gcf().canvas.manager.set_window_title(plot_title + f" w={island_w:.3f}")
-
-			# plt.ylim([np.pi-1,np.pi+1])
-			plt.ylim([0, 2*np.pi])
-			# plt.ylim([np.min(Rarr)-0.1, np.max(Rarr)+0.1])
-
-			plt.xlim([0, 2*np.pi])
-			# plt.xlim([0, np.pi+0.1])
-
-			plt.tight_layout()
-
-		print(f"SPEC Island width {island_w:.8f}")
-
-		return island_w
-
-
 	def plot_vecpot_volumes(fname, lvol_list, ns, nt, title=None):
 
 		if(not os.path.isfile(fname)):
@@ -950,22 +682,18 @@ class SPECslab():
 
 		return ax
 
-	def get_full_field(data, r, theta, zeta, nr, const_factor=None):
-
+	def get_full_field(data: SPECout, r, theta, zeta, nr, const_factor=None):
+		
 		nvol = data.output.Mvol
 		G = data.input.physics.Igeometry
-		mpol = data.input.physics.Mpol 
-		im = data.output.im
-		_in = data.output.in_
 
 		iimin = 0
 		iimax = 1
 
 		r0, z0 = SPECslab.get_spec_radius(data, theta, zeta, -1)
 		B = np.zeros((3, len(r)))
+		
 		for i in range(nvol):
-
-			lrad = data.input.physics.Lrad[i]
 
 			ri, zi = SPECslab.get_spec_radius(data, theta, zeta, i-1)
 			rmin = np.sqrt((ri-r0)**2 + zi**2)
@@ -977,24 +705,10 @@ class SPECslab():
 			sarr = 2 * (r_vol - rmin) / (rmax - rmin) - 1
 			if(i == 0 and G != 1):
 				sarr = 2 * ((r_vol - rmin) / (rmax - rmin))**2 - 1
-
-			jac = SPECslab.get_spec_jacobian(data, i, sarr, theta, zeta)
-			g = SPECslab.get_spec_metric(data, i, sarr, theta, zeta)
-
-			Lsingularity = (i == 0) and (G != 1)
-
-			T = SPECslab.get_spec_poly_basis(Lsingularity, mpol, lrad, sarr)
-
-			Ate = np.array(data.vector_potential.Ate)[i]
-			Aze = np.array(data.vector_potential.Aze)[i]
-			Ato = np.array(data.vector_potential.Ato)[i]
-			Azo = np.array(data.vector_potential.Azo)[i]
 			
-			B_contrav = vecpot_to_contrav(T, Ate, Aze, Ato, Azo, jac, im, _in, theta, zeta)
+			g = data.get_metric(sarr, theta, zeta, i)
 
-			iimax = iimax + len(r_vol)
-
-			# B_cov = SPECslab.get_contra2cov(data, i, B_contrav, sarr, theta, zeta, 1)
+			B_contrav = data.get_field_contrav(i, sarr, theta, zeta)
 
 			B_cart = np.zeros_like(B_contrav)
 			B_cart[0] = B_contrav[0] / g[0,0,0,0]**0.5
@@ -1809,13 +1523,18 @@ class SPECslab():
 
 	def add_perturbation(input_fname, ouput_fname, kick_amplitude=0.8, max_num_iters=200, perturbation=None):
 
+		# c = Console(highlight=False, force_jupyter=False)
+		def log(s):
+			# c.print(f"[green][italic]add_perturbation[/italic]: {s}[/green]")
+			print(f"\t\tadd_perturbation: {s}")
+
 		# subprocess.run(f"cp {input_fname} {ouput_fname}", shell=True)
 		inputnml = SPECNamelist(ouput_fname)        
 
 		if(perturbation is None):
 			eigval, eigvec, min_eigval_ind, min_eigvec = SPECslab.get_eigenstuff(input_fname)
 			if(eigval[min_eigval_ind] > 0.0):
-				print("Smallest eigenvalue of the force-gradient matrix is positive!")
+				log("Smallest eigenvalue of the force-gradient matrix is positive!")
 				# return False
 
 			perturbation = np.real(min_eigvec[1::inputnml._Mpol+1])
@@ -1832,12 +1551,12 @@ class SPECslab():
 			isect_flag = SPECslab.check_intersect_initial(inputnml, False)
 			if(isect_flag):
 				if(n == max_num_iters-1):
-					print("\nERROR: Couldn't find pertubation amplitude!")
+					log("ERROR: Couldn't find pertubation amplitude!")
 					return False
 				perturbation *= 0.98
 			else:
 				break
-		print("Eigenmode found ", n)
+		log(f"Eigenmode found {n}")
 
 		inputnml.write_simple(ouput_fname)
 
@@ -2015,6 +1734,7 @@ def check_intersect_helper(x, nvol):
 			diff = x[v] - x[sv]
 			for i in range(len(diff)-1):
 				if((diff[i]*diff[i+1]) < 0):
+					# print(f"check_intersect_helper: INTERSECTION vols {v} and {sv}")
 					return True
 	return False
 
@@ -2042,79 +1762,3 @@ def flatten_hdf5_file(name, node, file_dict):
 		file_dict[fullname] = node[:]
 	else:
 		pass
-
-
-def vecpot_to_contrav(T, Ate, Aze, Ato, Azo, jac, im, _in, tarr, zarr):
-
-		basis = T[:,0,:]
-		dbasis = T[:,1,:]
-
-		mn = Azo.shape[0]
-		lrad = Azo.shape[1] # actually is lrad+1
-		nt = tarr.shape[0]
-		nz = zarr.shape[0]
-		nr = basis.shape[1]
-
-		# cosa = np.cos(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:])
-		# sina = np.sin(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
-
-		# if(Lsingularity):
-		#     Bs = np.zeros((ns, nt, nz))
-		#     Bt = np.zeros((ns, nt, nz))
-		#     Bz = np.zeros((ns, nt, nz))
-
-		#     for j in range(mn):
-		#         basis = T[:,0,im[j]+1]
-		#         dbasis = T[:,1,im[j]+1]
-
-		#         Bs_term = (im[:,None]*Azo[:,:] + _in[:,None]*Ato[:,:])[:,:,None,None] * cosa[:,None,:,:] - (im[:,None]*Aze[:,:] + _in[:,None]*Ate[:,:])[:,:,None,None] * sina[:,None,:,:]
-		#         Bs += np.einsum('s,jltz->stz', basis, Bs_term, optimize=True)
-		#         Bt += np.einsum('s,jltz->stz', -dbasis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
-		#         Bz += np.einsum('s,jltz->stz', dbasis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
-		# else:
-			# basis = T[:,0,:]
-			# dbasis = T[:,1,:]
-			# Bs_term = (im[:,None]*Azo[:,:] + _in[:,None]*Ato[:,:])[:,:,None,None] * cosa[:,None,:,:] - (im[:,None]*Aze[:,:] + _in[:,None]*Ate[:,:])[:,:,None,None] * sina[:,None,:,:]
-			
-			# print("shapes", basis.shape, Bs_term.shape)
-			# print(Azo.shape, Ate.shape)
-
-			# Bs = np.einsum('ls,jtzl->stz', basis, Bs_term, optimize=True)
-			# Bt = np.einsum('ls,jltz->stz', -dbasis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
-			# Bz = np.einsum('ls,jltz->stz', dbasis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
-		
-
-		# should use np.zeros, not np.empty
-		Bs = np.zeros((nr, nt, nz))
-		Bt = np.zeros_like(Bs)
-		Bz = np.zeros_like(Bs)
-
-		# print(Aze.shape, dbasis.shape)
-
-		for j in range(mn):
-			for t in range(nt):
-				for z in range(nz):
-					alpha = im[j]*tarr[t] - _in[j]*zarr[z]
-					cosa = np.cos(alpha)
-					sina = np.sin(alpha)
-						
-					for l in range(lrad):
-						Bs_term = (im[j]*Azo[j,l] + _in[j]*Ato[j,l]) * cosa - (im[j]*Aze[j,l] + _in[j]*Ate[j,l]) * sina
-						
-						for s in range(nr):
-							Bs[s, t, z] += (basis[l,s] * Bs_term) / jac[s,t,z]
-							Bt[s, t, z] += (-dbasis[l,s] * (Aze[j,l]*cosa + Azo[j,l]*sina)) / jac[s,t,z]
-							Bz[s, t, z] += (dbasis[l,s] * (Ate[j,l]*cosa + Ato[j,l]*sina)) / jac[s,t,z]
-
-		# Bs_term = (im[:,None]*Azo[:,:] + _in[:,None]*Ato[:,:])[:,:,None,None] * cosa[:,None,:,:] - (im[:,None]*Aze[:,:] + _in[:,None]*Ate[:,:])[:,:,None,None] * sina[:,None,:,:]
-		
-		# print("shapes", basis.shape, Bs_term.shape)
-		# print(Azo.shape, Ate.shape)
-
-		# Bs = np.einsum('ls,jtzl->stz', basis, Bs_term, optimize=True)
-		# Bt = np.einsum('ls,jltz->stz', -dbasis, Aze[:,:,None,None]*cosa[:,None,:,:] + Azo[:,:,None,None]*sina[:,None,:,:], optimize=True)
-		# Bz = np.einsum('ls,jltz->stz', dbasis, Ate[:,:,None,None]*cosa[:,None,:,:] + Ato[:,:,None,None]*sina[:,None,:,:], optimize=True)
-		
-		# print('bt', Bz[:,0,0])
-
-		return np.array([Bs, Bt, Bz])
