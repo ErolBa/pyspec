@@ -354,8 +354,9 @@ def get_Bcart(self,
         zarr=np.linspace(0, 0, 1),
         input1D=False):
 
-    if(self.geometry is not 1):
-        raise NotImplementedError("Bcart only implemented for geometry=1")
+    # print(self.input.physics.Igeometry)
+    # if(self.input.physics.Igeometry is not 1):
+    #     raise NotImplementedError("Bcart only implemented for geometry=1")
     
     Bcontrav = self.get_B(lvol, jacobian, sarr, tarr, zarr, input1D)
 

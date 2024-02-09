@@ -396,7 +396,12 @@ class SPECNamelist(Namelist):
         for key in changelist:
             # convert the list into numpy.ndarray
             data = np.array(self["physicslist"][key], dtype=np.float64)
-            orgmlen, orgnlen = data.shape
+            if(len(data.shape)==1):
+                print('asd')
+                orgnlen = 0
+                orgmlen = data.shape[0]
+            else:
+                orgmlen, orgnlen = data.shape
             orgnmin = self["physicslist"].start_index[key.lower()][0]
             orgnmax = orgnmin + orgnlen - 1
 

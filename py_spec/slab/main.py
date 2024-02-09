@@ -25,6 +25,7 @@ class SPECslab():
 	mu0 = 4*np.pi*1e-7
 
 	def calc_delprime(k):
+		# for louriero analytical profile
 		return 2*(5-k**2)*(3+k**2)/(k**2*np.sqrt(4+k**2))
 
 	def calc_rslab_for_delprime(target_delprime):
@@ -257,65 +258,6 @@ class SPECslab():
 		x_max = np.min(np.where(x > 0, x, 100.0))
 		width = x_max - x_min
 		return width
-
-	def get_spec_jacobian(data, lvol, sarr, theta, zeta):
-
-		# geometry =  data['input']['physics']['Igeometry'][0]
-		# rpol =  data['input']['physics']['rpol'][0]
-		# rtor =  data['input']['physics']['rtor'][0]
-
-		geometry =  data.input.physics.Igeometry
-		rpol =  data.input.physics.rpol
-		rtor =  data.input.physics.rtor
-
-		Rarr, Zarr = SPECslab.get_spec_R_derivatives(data, lvol, sarr, theta, zeta, 'R')
-
-		if(geometry == 1):
-			return Rarr[1] #* rtor * rpol # fixed here
-		elif(geometry == 2):
-			return Rarr[0] * Rarr[1]
-		elif(geometry == 3):
-			return Rarr[0] * (Rarr[2]*Zarr[1] - Rarr[1]*Zarr[2])
-		else:
-			raise ValueError("Error: unsupported dimension")
-
-	def get_spec_R_derivatives(data, lvol, sarr, tarr, zarr, RorZ):
-		# the vol index is -1 compared to the matlab one
-
-		geometry = data.input.physics.Igeometry
-		im = data.output.im
-		_in = data.output.in_
-		mn = data.output.mn
-		mregular = data.input.numerics.Mregular
-		Rbc = data.output.Rbc
-		Rmn_p = Rbc[lvol+1,:]
-		Rmn = Rbc[lvol,:]
-		Zbs = data.output.Zbs
-		Zmn = Zbs[lvol,:]
-		Zmn_p = Zbs[lvol+1,:]
-
-		ns = len(sarr)
-		nt = len(tarr)
-		nz = len(zarr)
-
-		cosa = np.cos(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
-		sina = np.sin(im[:,None,None] * tarr[None,:,None] - _in[:,None,None] * zarr[None,None,:]) # [j, it, iz]
-		factor = SPECslab.get_spec_regularization_factor(geometry, mn, im, lvol, sarr, mregular, 'G')
-
-		R = np.zeros((4, ns, nt, nz))
-		sum_string = 'mtz,ms->stz'
-		R[0] = np.einsum(sum_string, cosa * (Rmn + (Rmn_p - Rmn))[:,None,None], factor[:,0])
-		R[1] = np.einsum(sum_string, cosa * (Rmn_p - Rmn)[:,None,None], factor[:,1])
-		R[2] = np.einsum(sum_string,-sina * ((Rmn + (Rmn_p - Rmn)) * im)[:,None,None], factor[:,0])
-		R[3] = np.einsum(sum_string, sina * ((Rmn_p - Rmn) * _in)[:,None,None], factor[:,0])
-
-		Z = np.zeros((4, ns, nt, nz))
-		Z[0] = np.einsum(sum_string, sina * (Zmn + (Zmn_p - Zmn))[:,None,None], factor[:,0])
-		Z[1] = np.einsum(sum_string, sina * (Zmn_p - Zmn)[:,None,None], factor[:,1])
-		Z[2] = np.einsum(sum_string, cosa * ((Zmn + (Zmn_p - Zmn)) * im)[:,None,None], factor[:,0])
-		Z[3] = np.einsum(sum_string,-cosa * ((Zmn_p - Zmn) * _in)[:,None,None], factor[:,0])
-
-		return R, Z
 
 
 	def get_spec_poly_basis(Lsingularity, mpol, lrad, sarr):
@@ -1415,7 +1357,7 @@ class SPECslab():
 		insect_flag = check_intersect_helper(x, x.shape[0])
 		return insect_flag
 
-	def check_intersect_initial(inputnml, plot_flag=False, ax=None):
+	def check_intersect_initial(inputnml, plot=False, ax=None):
 		infaces_fourier = inputnml.interface_guess
 		thetas = np.linspace(0, 2*np.pi, 200)
 		x = np.zeros((inputnml['physicslist']['Nvol'], len(thetas)))
@@ -1426,7 +1368,7 @@ class SPECslab():
 
 		x = np.vstack([np.zeros_like(thetas), x])
 
-		if(plot_flag):
+		if(plot):
 			if(ax is None):
 				fig, ax = plt.subplots()
 			

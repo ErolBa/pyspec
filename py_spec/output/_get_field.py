@@ -63,6 +63,8 @@ def get_field_cart(self, lvol, sarr, tarr, zarr):
     Bcart[1] = Bcontrav[0] * Zarr[1] + Bcontrav[1] * Zarr[2] + Bcontrav[2] * Zarr[3] 
     Bcart[2] = Bcontrav[2] * Rarr[0]
 
+    print(Zarr[1], Zarr[2], Zarr[3])
+
     return Bcart
 
 

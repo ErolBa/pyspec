@@ -6,7 +6,7 @@ from numba import njit
 
 ## parameters ---------------------------------------------------------
 
-## numba signficantly speeds up calculations, can be installed with pip install ... numba
+## numba signficantly speeds up calculations, can be installed with 'pip install ... numba'
 run_with_numba = True
 
 ##---------------------------------------------------------------------
