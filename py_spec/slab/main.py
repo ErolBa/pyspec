@@ -1517,7 +1517,7 @@ class SPECslab():
 		with h5py.File(fname,'r') as hf:
 			hf.visititems(print_attrs)
 
-	def comapre_hdf5_files(fname1, fname2):
+	def compare_hdf5_files(fname1, fname2):
 
 		with h5py.File(fname1) as f:
 			f1_flat = {}

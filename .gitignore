@@ -1,5 +1,6 @@
 py_spec.egg-info/
 
+.vscode
 *.nbi
 *.nbc
 *.pyc

@@ -93,16 +93,20 @@ def plot_fmn(self, intf, ntheta, **kwargs):
     sarr = np.array([1.0])
     R, Z, jacobian, g = self.get_grid_and_jacobian_and_metric(
             lvol=intf, sarr=sarr, tarr=tarr, zarr=zarr)
-    Bcontrav = self.get_B(
-        lvol=intf, jacobian=jacobian, sarr=sarr, tarr=tarr, zarr=zarr)
+    # Bcontrav = self.get_B(
+    #     lvol=intf, jacobian=jacobian, sarr=sarr, tarr=tarr, zarr=zarr)
+    
+    Bcontrav = self.get_field_contrav(intf, sarr, tarr, zarr)
     
     f_th_zeta_1 = np.sqrt(np.einsum("...i,...ji,...j->...", Bcontrav, g, Bcontrav))[0,:,0]
 
     sarr = np.array([-1.0])
     R, Z, jacobian, g = self.get_grid_and_jacobian_and_metric(
             lvol=intf+1, sarr=sarr, tarr=tarr, zarr=zarr)
-    Bcontrav = self.get_B(
-        lvol=intf+1, jacobian=jacobian, sarr=sarr, tarr=tarr, zarr=zarr)
+    # Bcontrav = self.get_B(
+    #     lvol=intf+1, jacobian=jacobian, sarr=sarr, tarr=tarr, zarr=zarr)
+    
+    Bcontrav = self.get_field_contrav(intf+1, sarr, tarr, zarr)
     
     f_th_zeta_2 = np.sqrt(np.einsum("...i,...ji,...j->...", Bcontrav, g, Bcontrav))[0,:,0]
 
