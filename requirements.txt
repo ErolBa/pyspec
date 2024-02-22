@@ -2,3 +2,7 @@ h5py
 matplotlib
 f90nml
 numpy
+sympy
+rich
+scipy
+

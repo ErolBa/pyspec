@@ -42,8 +42,12 @@ class SPECout:
     )
     from ._plot_modB import plot_modB, plot_fmn
     from ._plot_iota import plot_iota
-    from ._get_field import get_field_contrav, get_field_cart, get_field_mod
-    from ._get_geometry import get_metric, get_jacobian, get_coord_transform
+    
+    from ._get_field import get_field_contrav, get_field_cart, get_field_mod, get_cheby_basis_single
+    from ._get_geometry import get_metric, get_jacobian, get_coord_transform, get_coord_transform_list
+    from ._gen_poincare import bfield_nonsing, bfield_sing, trace_field_lines #, trace_field_lines_nbkode
+    
+    from ..torus._analysis import get_hessian, get_eigenstuff, calc_simple_jbs, gen_poincare, run_spec_master
 
     def __init__(self, *args, **kwargs):
         # args[0] should always be the name of a file or an item inside the root object

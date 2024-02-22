@@ -6,3 +6,4 @@ from .input.spec_namelist import SPECNamelist
 from .output.spec import SPECout
 from .slab.main import SPECslab
 from .slab.input_dict import input_dict
+from .torus.main import SPECtorus

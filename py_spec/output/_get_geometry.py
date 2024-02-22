@@ -266,14 +266,25 @@ def get_metric_helper_v2(geometry, rpol, rtor, Rac, Rbc, Zas, Zbs, im, in_, sarr
 
 
 def get_coord_transform(self, lvol, sarr, tarr, zarr):
+    
+    sarr = np.atleast_1d(sarr) + 0.0
+    tarr = np.atleast_1d(tarr) + 0.0
+    zarr = np.atleast_1d(zarr) + 0.0
 
     geometry = self.input.physics.Igeometry
     Rac, Rbc = self.output.Rbc[lvol : lvol + 2]
     Zas, Zbs = self.output.Zbs[lvol : lvol + 2]
     im = np.array(self.output.im, dtype=int)
     in_ = np.array(self.output.in_, dtype=int)
+    stell_sym = self.input.physics.Istellsym
 
-    Rarr, Zarr = get_coord_transform_helper(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
+    if(stell_sym):
+        Rarr, Zarr = get_coord_transform_helper(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr, zarr, lvol)
+    else:
+        Ras, Rbs = self.output.Rbs[lvol : lvol + 2]
+        Zac, Zbc = self.output.Zbc[lvol : lvol + 2]
+        Rarr, Zarr = get_coord_transform_geom3nonstellsym_helper(Rac, Rbc, Zas, Zbs, Ras, Rbs, Zac, Zbc, im, in_, sarr, tarr, zarr, lvol)
+    
     return Rarr, Zarr
 
 
@@ -315,6 +326,7 @@ def get_coord_transform_helper(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr
             fac0[im==0] = sbar**2
             fac1[im==0] = sbar
 
+
     if(geometry == 3):
         for s in range(ns):
             dR1 = Rac + fac0[:,s] * (Rbc - Rac)
@@ -346,4 +358,132 @@ def get_coord_transform_helper(geometry, Rac, Rbc, Zas, Zbs, im, in_, sarr, tarr
                     Rarr[2,s,t,z] = np.sum(-im * dR1 * sin)
                     Rarr[3,s,t,z] = np.sum(in_ * dR1 * sin)
     
+    return Rarr, Zarr
+
+@run_decorator
+def get_coord_transform_geom3nonstellsym_helper(Rac, Rbc, Zas, Zbs, Ras, Rbs, Zac, Zbc, im, in_, sarr, tarr, zarr, lvol):
+    """Return coordinate transformations: R, dR/ds, dR/dtheta, dR/dzeta 
+        (and for toroidal geometry: Z, dZ/ds, dZ/dtheta, dZ/dzeta)
+        For non-stellarator symmetric equilibria
+    Returns:
+        Rarr 
+        Zarr
+    """    
+ 
+    sbar = (sarr + 1.0) / 2.0
+    ns = len(sarr)
+    nt = len(tarr)
+    nz = len(zarr)
+
+    Rarr = np.empty((4, ns, nt, nz))
+    Zarr = np.zeros((4, ns, nt, nz))
+
+    fac0 = np.empty((len(im), ns))
+    fac1 = np.empty((len(im), ns))
+    
+    if(lvol > 0): # no coordinate singularity
+        fac0[:] = sbar[None,:]
+        fac1[:] = 0.5
+    
+    else: # with coordinate singularity
+        for s in range(ns):      
+            fac0[:,s] = sbar[s] ** im
+            fac1[:,s] =  im * 0.5 * sbar[s] ** (im - 1.0)
+        fac0[im==0] = sbar**2
+        fac1[im==0] = sbar
+
+    for s in range(ns):
+        dR1c = Rac + fac0[:,s] * (Rbc - Rac)
+        dZ1s = Zas + fac0[:,s] * (Zbs - Zas)
+        dR1s = Ras + fac0[:,s] * (Rbs - Ras)
+        dZ1c = Zac + fac0[:,s] * (Zbc - Zac)
+        for t in range(nt):
+            for z in range(nz):
+                cos = np.cos(im * tarr[t] - in_ * zarr[z])
+                sin = np.sin(im * tarr[t] - in_ * zarr[z])
+                            
+                Rarr[0,s,t,z] = np.sum(dR1c * cos + dR1s * sin)
+                Rarr[1,s,t,z] = np.sum(fac1[:,s] * (Rbc - Rac) * cos + fac1[:,s] * (Rbs - Ras) * sin)
+                Rarr[2,s,t,z] = np.sum(-im * dR1c * sin + im * dR1s * cos)
+                Rarr[3,s,t,z] = np.sum(in_ * dR1c * sin - in_ * dR1s * cos)
+
+                Zarr[0,s,t,z] = np.sum(dZ1s * sin + dZ1c * cos)
+                Zarr[1,s,t,z] = np.sum(fac1[:,s] * (Zbs - Zas) * sin + fac1[:,s] * (Zbc - Zac) * cos)
+                Zarr[2,s,t,z] = np.sum(im * dZ1s * cos - im * dZ1c * sin)
+                Zarr[3,s,t,z] = np.sum(-in_ * dZ1s * cos + in_ * dZ1c * sin)
+                        
+    return Rarr, Zarr
+
+def get_coord_transform_list(self, lvol, sarr, tarr, zarr):
+    
+    sarr = np.atleast_1d(sarr) + 0.0
+    tarr = np.atleast_1d(tarr) + 0.0
+    zarr = np.atleast_1d(zarr) + 0.0
+
+    if(len(sarr) != len(tarr) or len(sarr) != len(zarr)):
+        raise ValueError("sarr, tarr and zarr must have the same length")
+
+    geometry = self.input.physics.Igeometry
+    Rac, Rbc = self.output.Rbc[lvol : lvol + 2]
+    Zas, Zbs = self.output.Zbs[lvol : lvol + 2]
+    im = np.array(self.output.im, dtype=int)
+    in_ = np.array(self.output.in_, dtype=int)
+    # stell_sym = self.input.physics.Istellsym
+
+    Ras, Rbs = self.output.Rbs[lvol : lvol + 2]
+    Zac, Zbc = self.output.Zbc[lvol : lvol + 2]
+    Rarr, Zarr = get_coord_transform_geom3nonstellsym_list_helper(Rac, Rbc, Zas, Zbs, Ras, Rbs, Zac, Zbc, im, in_, sarr, tarr, zarr, lvol)
+    
+    return Rarr, Zarr
+
+@run_decorator
+def get_coord_transform_geom3nonstellsym_list_helper(Rac, Rbc, Zas, Zbs, Ras, Rbs, Zac, Zbc, im, in_, sarr, tarr, zarr, lvol):
+    """Return coordinate transformations: R, dR/ds, dR/dtheta, dR/dzeta 
+        (and for toroidal geometry: Z, dZ/ds, dZ/dtheta, dZ/dzeta)
+        For non-stellarator symmetric equilibria
+    Returns:
+        Rarr 
+        Zarr
+    """    
+ 
+    sbar = (sarr + 1.0) / 2.0
+    npts = len(sarr)
+
+    Rarr = np.empty((4, npts))
+    Zarr = np.zeros((4, npts))
+
+    fac0 = np.empty((len(im), npts))
+    fac1 = np.empty((len(im), npts))
+    
+    if(lvol > 0): # no coordinate singularity
+        fac0[:] = sbar[None,:]
+        fac1[:] = 0.5
+    
+    else: # with coordinate singularity
+        for s in range(npts):      
+            fac0[:,s] = sbar[s] ** im
+            fac1[:,s] =  im * 0.5 * sbar[s] ** (im - 1.0)
+        fac0[im==0] = sbar**2
+        fac1[im==0] = sbar
+    
+    
+    for s in range(npts):
+        dR1c = Rac + fac0[:,s] * (Rbc - Rac)
+        dZ1s = Zas + fac0[:,s] * (Zbs - Zas)
+        dR1s = Ras + fac0[:,s] * (Rbs - Ras)
+        dZ1c = Zac + fac0[:,s] * (Zbc - Zac)
+        
+        cos = np.cos(im * tarr[s] - in_ * zarr[s])
+        sin = np.sin(im * tarr[s] - in_ * zarr[s])
+                    
+        Rarr[0,s] = np.sum(dR1c * cos + dR1s * sin)
+        Rarr[1,s] = np.sum(fac1[:,s] * (Rbc - Rac) * cos + fac1[:,s] * (Rbs - Ras) * sin)
+        Rarr[2,s] = np.sum(-im * dR1c * sin + im * dR1s * cos)
+        Rarr[3,s] = np.sum(in_ * dR1c * sin - in_ * dR1s * cos)
+
+        Zarr[0,s] = np.sum(dZ1s * sin + dZ1c * cos)
+        Zarr[1,s] = np.sum(fac1[:,s] * (Zbs - Zas) * sin + fac1[:,s] * (Zbc - Zac) * cos)
+        Zarr[2,s] = np.sum(im * dZ1s * cos - im * dZ1c * sin)
+        Zarr[3,s] = np.sum(-in_ * dZ1s * cos + in_ * dZ1c * sin)
+                        
     return Rarr, Zarr

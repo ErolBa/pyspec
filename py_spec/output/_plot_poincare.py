@@ -15,6 +15,7 @@ def plot_poincare(self, toroidalIdx=0, prange="full", ax=None, **kwargs):
     import matplotlib.pyplot as plt
     import matplotlib.lines as mlines
     import numpy as np
+    
 
     # extract slice corresponding to the given toroidal cutplane
     Igeometry = self.input.physics.Igeometry
@@ -34,34 +35,46 @@ def plot_poincare(self, toroidalIdx=0, prange="full", ax=None, **kwargs):
     # get axix data
     if ax is None:
         fig, ax = plt.subplots()
-    plt.sca(ax)
+    else:
+        plt.sca(ax)
+        fig = plt.gcf()
+    
     # set default plotting parameters
     # use dots
-    if kwargs.get("marker") == None:
-        kwargs.update({"marker": "."})
+    # if kwargs.get("marker") == None:
+    #     kwargs.update({"marker": "."})
     # use gray color
     if kwargs.get("c") == None:
-        pass
+        kwargs.update({"c": "black"})
     # size of marker
-    if kwargs.get("s") == None:
-        kwargs.update({"s": 0.3})
-        # kwargs.update({"c": "gray"})
+    if kwargs.get("markersize") == None:
+        kwargs.update({"markersize": 0.6})
+        
+    kwargs.update({"alpha": 1.0})
+    kwargs.update({"lw": None})
+
     # make plot depending on the 'range'
     if prange == "full":
         nptrj = rr.shape[0]
         for ii in range(nptrj):
-            dots = ax.scatter(rr[ii, :], zz[ii, :], **kwargs)
+            dots = ax.plot(rr[ii, :], zz[ii, :], '.', **kwargs)
     elif prange == "upper":
-        dots = ax.scatter(rr[zz >= 0], zz[zz >= 0], **kwargs)
+        dots = ax.plot(rr[zz >= 0], zz[zz >= 0], '.', **kwargs)
     elif prange == "lower":
-        dots = ax.scatter(rr[zz <= 0], zz[zz <= 0], **kwargs)
+        dots = ax.plot(rr[zz <= 0], zz[zz <= 0], '.', **kwargs)
     else:
         raise ValueError("prange should be one of ['full'(default), 'upper', 'lower'].")
     # adjust figure properties
     if self.input.physics.Igeometry == 3:
-        plt.xlabel("R [m]", fontsize=20)
-        plt.ylabel("Z [m]", fontsize=20)
-        #plt.axis("equal")
+        plt.xlabel("R [m]", fontsize=14)
+        plt.ylabel("Z [m]", fontsize=14)
+        
+        plt.axis("equal")
+        
+        figsize = 6.0
+        aspect_ratio = (zz.max() - zz.min()) / (rr.max() - rr.min())
+        fig.set_size_inches(figsize, figsize * aspect_ratio)
+        
     if self.input.physics.Igeometry == 2:
         plt.xlabel("X [m]", fontsize=20)
         plt.ylabel("Y [m]", fontsize=20)
@@ -70,7 +83,9 @@ def plot_poincare(self, toroidalIdx=0, prange="full", ax=None, **kwargs):
         plt.ylabel("R [m]", fontsize=20)
         plt.xlabel(r"$\theta$", fontsize=20)
         plt.xlim([0, 2*np.pi])
-    plt.xticks(fontsize=16)
-    plt.yticks(fontsize=16)
+    
+    # plt.xticks(fontsize=16)
+    # plt.yticks(fontsize=16)
+    
 
     return dots

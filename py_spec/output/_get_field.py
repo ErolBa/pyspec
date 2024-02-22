@@ -19,6 +19,11 @@ else:
     run_decorator = lambda x: x
 
 def get_field_mod(self, lvol, sarr, tarr, zarr, Bcontrav=None, g=None):
+    
+    # cast to np.array of type double
+    sarr = np.atleast_1d(sarr) + 0.0
+    tarr = np.atleast_1d(tarr) + 0.0
+    zarr = np.atleast_1d(zarr) + 0.0
 
     if(Bcontrav is None):
         Bcontrav = self.get_field_contrav(lvol, sarr, tarr, zarr)
@@ -231,6 +236,80 @@ def get_zernike_basis(sbararr, lrad, mpol):
             for l in range(3, lrad+1, 2):
                 basis[l, 1, 0, s] -= (-1)**((l-1)*0.5) * (l+1) * 0.5 * sbararr[s]
                 basis[l, 1, 1, s] -= (-1)**((l-1)*0.5) * (l+1) * 0.5
+    
+    # rescaling
+    for m in range(0, mpol+1):
+        for l in range(m, lrad+1, 2):
+            basis[l, m, :] /= (l + 1.0)
+
+    return basis
+
+
+@run_decorator
+def get_cheby_basis_single(sarr, lrad):
+
+    # [radial mode (0->lrad), func/derivative (0/1), radial coord (sarr)]
+    # print(lrad)
+    basis = np.zeros((lrad+1, 2)) 
+        
+    basis[0, 0] = 1.0
+    basis[1, 0] = sarr
+    basis[1, 1] = 1.0
+
+    for l in range(2, lrad+1):
+        basis[l, 0] = 2.0 * sarr * basis[l-1, 0] - basis[l-2, 0]
+        basis[l, 1] = 2.0 * basis[l-1, 0] + 2.0 * sarr * basis[l-1, 1] - basis[l-2, 1]
+
+    # basis recombination
+    basis[:, 0] -= (-1)**np.arange(lrad+1)
+
+    # rescale for conditioning
+    for l in range(0, lrad+1):
+        basis[l] /= (l + 1.0)
+    
+    return basis
+
+
+@run_decorator
+def get_zernike_basis_single(sbararr, lrad, mpol):
+
+    # [radial mode (0->lrad), poloidal mode (0->mpol), func/derivative (0/1), radial coord (sarr)]
+    basis = np.zeros((lrad+1, mpol+1, 2)) 
+
+    r = sbararr
+    rm = 1.0 # sbar^m
+    rm1 = 0.0 # sbar^(m-1)
+    for m in range(mpol+1):
+
+        if(m <= lrad):
+            basis[m, m, 0] = rm
+            basis[m, m, 1] = m * rm1
+
+        if(m+2 <= lrad):
+            basis[m+2, m, 0] = (m+2) * rm * r**2.0 - (m+1) * rm
+            basis[m+2, m, 1] = (m+2)**2.0 * rm * r - (m+1) * m * rm1 
+        
+        for l in range(m+4, lrad+1, 2):
+            fac1 = l / (l**2.0 - m**2.0)
+            fac2 = 4.0 * (l - 1)
+            fac3 = (l - 2 + m) **2.0 / (l - 2) + (l - m)**2.0 / l
+            fac4 = ((l - 2)**2.0 - m**2.0) / (l - 2.0)
+
+            basis[l, m, 0] = fac1 * ( (fac2 * r**2.0 - fac3) * basis[l-2, m, 0] - fac4 * basis[l-4, m, 0])
+            basis[l, m, 1] = fac1 * ( 2.0 * fac2 * r * basis[l-2, m, 0] 
+                                        + (fac2 * r**2.0 - fac3) * basis[l-2, m, 1] - fac4 * basis[l-4, m, 1])
+            
+        rm1 = rm
+        rm = rm * r
+    
+    # basis recombination
+    for l in range(2, lrad+1, 2):
+        basis[l, 0, 0] -= (-1)**(l/2.0)
+
+    if(mpol >= 1):
+        for l in range(3, lrad+1, 2):
+            basis[l, 1, 0] -= (-1)**((l-1)*0.5) * (l+1) * 0.5 * sbararr
+            basis[l, 1, 1] -= (-1)**((l-1)*0.5) * (l+1) * 0.5
     
     # rescaling
     for m in range(0, mpol+1):

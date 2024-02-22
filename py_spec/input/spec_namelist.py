@@ -524,7 +524,7 @@ class SPECNamelist(Namelist):
         for key in self.boundary_keys:
             if key.lower() not in self["physicslist"].keys():
                 self["physicslist"][key] = np.zeros(
-                    [self._Mpol, self._Ntor * 2 + 1], dtype=np.float
+                    [self._Mpol, self._Ntor * 2 + 1], dtype=float
                 ).tolist()
                 self["physicslist"].start_index[key.lower()] = [-self._Ntor, 0]
             else:
@@ -538,7 +538,7 @@ class SPECNamelist(Namelist):
         for key in self.axis_keys:
             if key.lower() not in self["physicslist"].keys():
                 self["physicslist"][key] = np.zeros(
-                    [self._Ntor + 1], dtype=np.float
+                    [self._Ntor + 1], dtype=float
                 ).tolist()
                 self["physicslist"].start_index[key.lower()] = [0]
             else:

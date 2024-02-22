@@ -7,13 +7,11 @@ import h5py
 from py_spec import SPECNamelist, SPECout
 from scipy import integrate, interpolate, optimize
 import subprocess
-import numpy.linalg as linalg
-import numba
+from numba import njit
 import os
 import contextlib
 import sympy as sym
-from scipy.optimize import minimize_scalar
-from rich.console import Console
+
 
 from .input_dict import input_dict
 
@@ -189,6 +187,8 @@ class SPECslab():
 				"old" gets hessian from .###.sp.DF (not that good, has asymmetry)
 				"new" gets hessian from .###.hessian (default)
 		"""
+  
+		import numpy.linalg as linalg
 
 		if(which=="old"):
 			h = SPECslab.get_hessian(fname)
@@ -213,6 +213,8 @@ class SPECslab():
 
 	def perturb_eq(fname_hdf5, psi_w):
 		# takes an .end file (with the modes at the end)
+  
+		import numpy.linalg as linalg
 
 		w, v = linalg.eig(get_hessian(fname_hdf5))
 		ind_min_eigmode = np.argmin(w)
@@ -436,6 +438,8 @@ class SPECslab():
 		#     plt.plot(thetas, x[vol])
 
 	def get_rtarr(data, lvol, sarr, tarr, zarr0):
+     
+		import numpy.linalg as linalg
 
 		Rac = np.array(data.output.Rbc[lvol,:])
 		Rbc = np.array(data.output.Rbc[lvol+1,:])
@@ -625,6 +629,9 @@ class SPECslab():
 		return ax
 
 	def get_full_field(data: SPECout, r, theta, zeta, nr, const_factor=None):
+     
+		theta = np.atleast_1d(theta)
+		zeta = np.atleast_1d(zeta)
 		
 		nvol = data.output.Mvol
 		G = data.input.physics.Igeometry
@@ -915,7 +922,7 @@ class SPECslab():
 
 		ax.legend()
 		ax.set_xlabel("Radial coordinate r / x [m]")
-		ax.set_ylabel("Current [$\mu_0$]")
+		ax.set_ylabel("Current [$\\mu_0$]")
 
 		fig.canvas.mpl_connect('pick_event', SPECslab.onpick2)
 		fig.tight_layout()
@@ -931,7 +938,7 @@ class SPECslab():
 		Plots mu in each volume (piecewise constant)
 		"""
 		fig, ax = plt.subplots(1, 1)
-		plt.title('Plot of $\mu$')
+		plt.title('Plot of $\\mu$')
 		plt.gcf().canvas.manager.set_window_title('Mu')
 
 		data = SPECout(fname)
@@ -1464,6 +1471,8 @@ class SPECslab():
 		# SPECslab.plot_kamsurf(inpdict.fname_outh5, f"init kam surfaces psi_w={inpdict.psi_w:.3f}")
 
 	def add_perturbation(input_fname, ouput_fname, kick_amplitude=0.8, max_num_iters=200, perturbation=None):
+     
+		from rich.console import Console
 
 		# c = Console(highlight=False, force_jupyter=False)
 		def log(s):
@@ -1598,6 +1607,8 @@ class SPECslab():
 
 	def find_max_psiw_symm(delprimeas, psiw_lims, constraint=2, print_debug=False):
 		# finds max psiw for each delprimea
+  
+		from scipy.optimize import minimize_scalar
 
 		if(isinstance(delprimeas, float)):
 			delprimeas = [delprimeas]
@@ -1669,7 +1680,7 @@ class SPECslab():
 		finally:
 			os.chdir(old_path)
 
-@numba.njit(cache=True)
+@njit(cache=True)
 def check_intersect_helper(x, nvol):
 	for v in range(nvol):
 		for sv in range(v-1, v+1):

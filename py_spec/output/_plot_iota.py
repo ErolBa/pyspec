@@ -51,4 +51,4 @@ def plot_iota(self, xaxis="R", yaxis="i", ax=None, **kwargs):
     plt.xticks(fontsize=16)
     plt.yticks(fontsize=16)
 
-    return
+    return xdata, ydata
